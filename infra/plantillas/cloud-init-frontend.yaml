@@ -1,24 +1,40 @@
 #cloud-config
 # =============================================================================
-# CLOUD-INIT: Frontend (React + Vite + Nginx)
-# Aprovisionamiento automatizado de la VM en primer arranque
+# CLOUD-INIT: Frontend (React + Vite + Nginx + Systemd)
+# Aprovisionamiento automatizado declarativo con write_files y filebase64
 # =============================================================================
 
 package_update: true
-package_upgrade: false
 
-# 1. Paquetes del sistema estrictamente necesarios
 packages:
   - git
   - curl
   - nginx
+  - build-essential
 
-# 2. Creación declarativa de archivos
 write_files:
-  # Configuración del servidor Nginx con Reverse Proxy, soporte SPA y caché para Vite
+  # 1. Inyección declarativa de package.json codificado en Base64
+  - path: /var/www/asistencia-front/package.json
+    encoding: b64
+    content: ${package_json}
+
+  # 2. Inyección declarativa de index.html codificado en Base64
+  - path: /var/www/asistencia-front/index.html
+    encoding: b64
+    content: ${index_html}
+
+  # 3. Configuración de variables de entorno seguras con permisos 0600
+  - path: /etc/asistencia-frontend.env
+    permissions: "0600"
+    content: |
+      AMBIENTE=${ambiente}
+      VITE_API_URL=${vite_api_url}
+      BACKEND_HOST=${backend_host}
+
+  # 4. Configuración del servidor Nginx con Reverse Proxy, soporte SPA y caché Vite
   - path: /etc/nginx/sites-available/asistencia-front
     owner: root:root
-    permissions: '0644'
+    permissions: "0644"
     content: |
       server {
           listen 80 default_server;
@@ -64,17 +80,34 @@ write_files:
           gzip_types text/plain text/css text/xml text/javascript application/javascript application/json image/svg+xml;
       }
 
-  # Permiso sudo sin contraseña para que el usuario pueda recargar Nginx
+  # 5. Definición declarativa de servicio systemd para Frontend
+  - path: /etc/systemd/system/asistencia-frontend.service
+    content: |
+      [Unit]
+      Description=Servicio Web Frontend Asistencia (Nginx Reverse Proxy)
+      After=network.target nginx.service
+      Wants=nginx.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/bin/systemctl reload nginx
+      ExecReload=/usr/bin/systemctl reload nginx
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # 6. Permiso sudo para que el usuario administrador pueda recargar el servicio web
   - path: /etc/sudoers.d/admin-nginx
     owner: root:root
-    permissions: '0440'
+    permissions: "0440"
     content: |
-      ${admin_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx
+      ${admin_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx, /usr/bin/systemctl restart asistencia-frontend
 
-  # Script utilitario de despliegue y actualización (/usr/local/bin/deploy-frontend.sh)
+  # 7. Script utilitario para actualización y mantenimiento manual
   - path: /usr/local/bin/deploy-frontend.sh
     owner: root:root
-    permissions: '0755'
+    permissions: "0755"
     content: |
       #!/bin/bash
       set -e
@@ -97,13 +130,12 @@ write_files:
       echo "[3/4] Compilando con Vite..."
       npm run build
 
-      echo "[4/4] Recargando servidor web Nginx..."
+      echo "[4/4] Recargando servicio web Nginx..."
       sudo systemctl reload nginx
       echo "=== [Deploy Frontend] Despliegue completado con éxito ==="
 
-# 3. Comandos ejecutados automáticamente al arrancar
 runcmd:
-  # Habilitar 1GB Swap para compilación fluida de Vite / TypeScript
+  # 1. Habilitar 1GB Swap para compilación fluida de Vite / TypeScript
   - |
     if [ ! -f /swapfile ]; then
       fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
@@ -113,79 +145,49 @@ runcmd:
       echo '/swapfile none swap sw 0 0' >> /etc/fstab
     fi
 
-  # Instalar Node.js LTS
+  # 2. Instalar Node.js LTS
   - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash -
   - apt-get install -y nodejs
 
-  # Preparar directorios base
+  # 3. Preparar directorios base
   - mkdir -p /var/www/asistencia-front/dist /home/${admin_username}
 
-  # Crear página temporal de inicialización con auto-refresco
-  - |
-    cat <<'EOF' > /var/www/asistencia-front/dist/index.html
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8">
-      <meta http-equiv="refresh" content="5">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Inicializando - Control de Asistencia</title>
-      <style>
-        body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:1rem}
-        .card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:2.5rem;text-align:center;max-width:520px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5)}
-        h1{font-size:1.5rem;color:#38bdf8;margin:0 0 1rem}
-        p{color:#94a3b8;font-size:1rem;line-height:1.6;margin:0 0 1.5rem}
-        .spinner{width:40px;height:40px;margin:0 auto 1.5rem;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin 1s linear infinite}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .badge{display:inline-block;padding:0.25rem 0.75rem;background:#0369a1;color:#e0f2fe;border-radius:9999px;font-size:0.8rem;font-weight:600;margin-bottom:1rem}
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="spinner"></div>
-        <span class="badge">Aprovisionamiento Automático</span>
-        <h1>Compilando Sistema de Asistencia</h1>
-        <p>La máquina virtual está instalando dependencias y compilando la aplicación web. Esta página se actualizará automáticamente en unos instantes...</p>
-      </div>
-    </body>
-    </html>
-    EOF
-    chmod 644 /var/www/asistencia-front/dist/index.html
-
-  # Activar configuración de Nginx
+  # 4. Activar configuración del sitio en Nginx
   - rm -f /etc/nginx/sites-enabled/default
   - ln -sf /etc/nginx/sites-available/asistencia-front /etc/nginx/sites-enabled/
-  - nginx -t && systemctl restart nginx && systemctl enable nginx
 
-  # Clonar repositorio Git si se especificó repo_url
+  # 5. Clonar repositorio Git si se especificó y no existe localmente
   - |
     if [ -n "${repo_url}" ] && [ ! -d /var/www/asistencia-front/.git ]; then
       git config --system --add safe.directory /var/www/asistencia-front
-      git clone -b "${repo_branch}" "${repo_url}" /tmp/repo
-      cp -a /tmp/repo/. /var/www/asistencia-front/
-      rm -rf /tmp/repo
+      git clone -b "${repo_branch}" "${repo_url}" /tmp/frontend-repo
+      cp -a /tmp/frontend-repo/. /var/www/asistencia-front/
+      rm -rf /tmp/frontend-repo
     fi
 
-  # Escribir archivo .env para Vite
+  # 6. Copiar archivo .env para compilación de Vite
+  - cp /etc/asistencia-frontend.env /var/www/asistencia-front/.env
+  - chmod 644 /var/www/asistencia-front/.env
+
+  # 7. Compilación con Vite
   - |
-    cat <<'EOF' > /var/www/asistencia-front/.env
-    VITE_API_URL=${vite_api_url}
-    EOF
-    chmod 644 /var/www/asistencia-front/.env
+    cd /var/www/asistencia-front
+    if [ -f package.json ]; then
+      npm install
+      npm run build || true
+    fi
 
-  # Ajustar permisos para el usuario administrador
-  - chown -R ${admin_username}:${admin_username} /var/www/asistencia-front
+  # 8. Ajustar permisos para www-data y usuario de sistema
+  - useradd --system --no-create-home asistenciaapp || true
+  - chown -R www-data:www-data /var/www/asistencia-front
+  - chmod -R 755 /var/www/asistencia-front/dist
 
-  # Crear enlace simbólico para que el usuario pueda ejecutar ~/deploy.sh
+  # 9. Recargar demonios de systemd e iniciar Nginx y el servicio frontend
+  - systemctl daemon-reload
+  - systemctl enable --now nginx
+  - systemctl enable --now asistencia-frontend
+
+  # 10. Enlace simbólico de conveniencia para deploy manual
   - ln -sf /usr/local/bin/deploy-frontend.sh /home/${admin_username}/deploy.sh
   - chown -h ${admin_username}:${admin_username} /home/${admin_username}/deploy.sh
-
-  # Despliegue inicial (npm install + npm run build + systemctl reload nginx)
-  - |
-    if [ -f /var/www/asistencia-front/package.json ]; then
-      su - ${admin_username} -c "/usr/local/bin/deploy-frontend.sh"
-      chmod -R 755 /var/www/asistencia-front/dist
-    fi
-
-  # Registrar finalización en log del sistema
   - 'echo "Cloud-init frontend completado: $(date)" >> /var/log/asistencia-setup.log'

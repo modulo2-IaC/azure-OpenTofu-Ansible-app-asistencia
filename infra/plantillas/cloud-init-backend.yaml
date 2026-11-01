@@ -1,24 +1,67 @@
 #cloud-config
 # =============================================================================
-# CLOUD-INIT: Backend (NestJS + Node.js + PM2)
-# Aprovisionamiento automatizado de la VM en primer arranque
+# CLOUD-INIT: Backend NestJS + Systemd Service
+# Aprovisionamiento automatizado declarativo con write_files y filebase64
 # =============================================================================
 
 package_update: true
-package_upgrade: false
 
-# 1. Paquetes del sistema base estrictamente necesarios
 packages:
   - git
   - curl
   - build-essential
 
-# 2. Creación declarativa de archivos en el sistema base
 write_files:
-  # Script utilitario de despliegue y actualización (/usr/local/bin/deploy-backend.sh)
+  # 1. Inyección declarativa de package.json codificado en Base64
+  - path: /opt/asistencia-backend/package.json
+    encoding: b64
+    content: ${package_json}
+
+  # 2. Configuración de variables de entorno seguras con permisos 0600
+  - path: /etc/asistencia-backend.env
+    permissions: "0600"
+    content: |
+      PORT=3000
+      AMBIENTE=${ambiente}
+      NODE_ENV=production
+      DATABASE_URL=${database_url}
+      JWT_SECRET=${jwt_secret}
+      CORS_ORIGIN=${cors_origin}
+      APP_TIMEZONE=${app_timezone}
+      RUN_MIGRATIONS=${run_migrations}
+      ADMIN_REGISTRATION_NO=${admin_registration_no}
+      ADMIN_PASSWORD=${admin_password}
+      ADMIN_FULL_NAME=${admin_full_name}
+
+  # 3. Definición declarativa del servicio systemd para NestJS
+  - path: /etc/systemd/system/asistencia-backend.service
+    content: |
+      [Unit]
+      Description=Servicio Backend Asistencia (NestJS)
+      After=network.target
+
+      [Service]
+      WorkingDirectory=/opt/asistencia-backend
+      EnvironmentFile=/etc/asistencia-backend.env
+      ExecStart=/usr/bin/node dist/main.js
+      Restart=always
+      RestartSec=10
+      User=asistenciaapp
+
+      [Install]
+      WantedBy=multi-user.target
+
+  # 4. Permisos sudo para que el usuario administrador pueda gestionar el servicio
+  - path: /etc/sudoers.d/admin-asistencia
+    owner: root:root
+    permissions: "0440"
+    content: |
+      ${admin_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart asistencia-backend, /usr/bin/systemctl reload asistencia-backend, /usr/bin/systemctl status asistencia-backend
+
+  # 5. Script utilitario para actualización y mantenimiento manual
   - path: /usr/local/bin/deploy-backend.sh
     owner: root:root
-    permissions: '0755'
+    permissions: "0755"
     content: |
       #!/bin/bash
       set -e
@@ -36,7 +79,7 @@ write_files:
       fi
 
       echo "[2/5] Instalando dependencias de Node.js..."
-      npm install --production=false
+      npm install
 
       echo "[3/5] Compilando NestJS..."
       npm run build
@@ -48,14 +91,12 @@ write_files:
       npm run seed:admin || true
       npm run seed:student || true
 
-      echo "[+] Reiniciando servicio con PM2..."
-      pm2 restart /opt/asistencia-backend/ecosystem.config.js || pm2 start /opt/asistencia-backend/ecosystem.config.js
-      pm2 save
+      echo "[+] Reiniciando servicio con systemd..."
+      sudo systemctl restart asistencia-backend
       echo "=== [Deploy Backend] Despliegue completado con éxito ==="
 
-# 3. Comandos ejecutados automáticamente al arrancar
 runcmd:
-  # Habilitar 1GB Swap para evitar Out-Of-Memory durante la compilación TypeScript
+  # 1. Configurar Swap de 1GB para compilación holgada de TypeScript
   - |
     if [ ! -f /swapfile ]; then
       fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
@@ -65,73 +106,46 @@ runcmd:
       echo '/swapfile none swap sw 0 0' >> /etc/fstab
     fi
 
-  # Instalar Node.js LTS y PM2
+  # 2. Instalar Node.js LTS
   - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash -
   - apt-get install -y nodejs
-  - npm install -g pm2
 
-  # Preparar directorios de trabajo y logs
-  - mkdir -p /var/log/pm2 /opt/asistencia-backend /home/${admin_username}
-  - chown -R ${admin_username}:${admin_username} /var/log/pm2
+  # 3. Preparar estructura de directorios
+  - mkdir -p /opt/asistencia-backend /home/${admin_username}
 
-  # Configurar servicio systemd para que PM2 arranque con el usuario administrador
-  - env PATH=$PATH:/usr/bin pm2 startup systemd -u ${admin_username} --hp /home/${admin_username}
-
-  # Clonar repositorio Git si se especificó repo_url
+  # 4. Clonar repositorio Git si se especificó y no existe repositorio local
   - |
     if [ -n "${repo_url}" ] && [ ! -d /opt/asistencia-backend/.git ]; then
       git config --system --add safe.directory /opt/asistencia-backend
-      git clone -b "${repo_branch}" "${repo_url}" /opt/asistencia-backend
+      git clone -b "${repo_branch}" "${repo_url}" /tmp/backend-repo
+      cp -a /tmp/backend-repo/. /opt/asistencia-backend/
+      rm -rf /tmp/backend-repo
     fi
 
-  # Escribir archivo .env con credenciales seguras
+  # 5. Copiar variables de entorno locales para herramientas CLI (migraciones/semillas)
+  - cp /etc/asistencia-backend.env /opt/asistencia-backend/.env
+  - chmod 600 /opt/asistencia-backend/.env
+
+  # 6. Compilación, migraciones y semillas iniciales de datos
   - |
-    cat <<'EOF' > /opt/asistencia-backend/.env
-    NODE_ENV=production
-    PORT=3000
-    DATABASE_URL=${database_url}
-    JWT_SECRET=${jwt_secret}
-    CORS_ORIGIN=${cors_origin}
-    APP_TIMEZONE=${app_timezone}
-    RUN_MIGRATIONS=${run_migrations}
-    ADMIN_REGISTRATION_NO=${admin_registration_no}
-    ADMIN_PASSWORD=${admin_password}
-    ADMIN_FULL_NAME=${admin_full_name}
-    EOF
-    chmod 600 /opt/asistencia-backend/.env
+    cd /opt/asistencia-backend
+    if [ -f package.json ]; then
+      npm install
+      npm run build || true
+      npm run migration:run || true
+      npm run seed:admin || true
+      npm run seed:student || true
+    fi
 
-  # Escribir archivo ecosystem.config.js para PM2
-  - |
-    cat <<'EOF' > /opt/asistencia-backend/ecosystem.config.js
-    module.exports = {
-      apps: [{
-        name: 'asistencia-backend',
-        script: 'dist/main.js',
-        cwd: '/opt/asistencia-backend',
-        instances: 1,
-        autorestart: true,
-        watch: false,
-        env_file: '/opt/asistencia-backend/.env',
-        error_file: '/var/log/pm2/asistencia-error.log',
-        out_file:   '/var/log/pm2/asistencia-out.log',
-        log_date_format: 'YYYY-MM-DD HH:mm:ss'
-      }]
-    };
-    EOF
-    chmod 644 /opt/asistencia-backend/ecosystem.config.js
+  # 7. Crear usuario de sistema para ejecución segura
+  - useradd --system --no-create-home asistenciaapp || true
+  - chown -R asistenciaapp:asistenciaapp /opt/asistencia-backend
 
-  # Asignar permisos al usuario administrador en /opt/asistencia-backend
-  - chown -R ${admin_username}:${admin_username} /opt/asistencia-backend
+  # 8. Recargar demonios de systemd e iniciar servicio backend
+  - systemctl daemon-reload
+  - systemctl enable --now asistencia-backend
 
-  # Crear enlace simbólico para que el usuario pueda ejecutar ~/deploy.sh
+  # 9. Enlace simbólico de despliegue para el usuario administrador
   - ln -sf /usr/local/bin/deploy-backend.sh /home/${admin_username}/deploy.sh
   - chown -h ${admin_username}:${admin_username} /home/${admin_username}/deploy.sh
-
-  # Despliegue inicial (compilación, migración, semillas e inicio con PM2)
-  - |
-    if [ -f /opt/asistencia-backend/package.json ]; then
-      su - ${admin_username} -c "/usr/local/bin/deploy-backend.sh"
-    fi
-
-  # Registrar finalización en log del sistema
   - 'echo "Cloud-init backend completado: $(date)" >> /var/log/asistencia-setup.log'
