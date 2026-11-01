@@ -1,0 +1,58 @@
+# =============================================================================
+# SCRIPT DE AUTOMATIZACIÓN: DESTRUCCIÓN / TEARDOWN DE INFRAESTRUCTURA
+# Sistema de Asistencia - Microsoft Azure con OpenTofu
+# =============================================================================
+
+[CmdletBinding()]
+param(
+    [Parameter()]
+    [switch]$Force
+)
+
+$ErrorActionPreference = "Stop"
+$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RootDir     = Split-Path -Parent $ScriptDir
+$TemplateDir = Join-Path $RootDir "plantillas"
+$ParamDir    = Join-Path $RootDir "parametros"
+
+Write-Host "`n============================================================" -ForegroundColor Red
+Write-Host "  Destrucción Controlada de Infraestructura en Azure" -ForegroundColor Red
+Write-Host "============================================================" -ForegroundColor Red
+
+# 1. Confirmación de seguridad
+if (-not $Force) {
+    Write-Host "`n[PELIGRO] Esta acción eliminará permanentemente:" -ForegroundColor Red
+    Write-Host "  - Máquinas Virtuales Linux (Backend y Frontend)" -ForegroundColor Red
+    Write-Host "  - IPs Públicas Estáticas y Tarjetas de Red (NICs)" -ForegroundColor Red
+    Write-Host "  - Firewalls NSG y Asociaciones de Red" -ForegroundColor Red
+    Write-Host "  - Red Virtual (VNet) y Subredes" -ForegroundColor Red
+    Write-Host "  - Log Analytics Workspace y Alertas de Azure Monitor" -ForegroundColor Red
+    Write-Host "  - Resource Group completo en Azure" -ForegroundColor Red
+    
+    $confirm = Read-Host "`nEscribe 'destroy' para confirmar la eliminación de la infraestructura"
+    if ($confirm -ne "destroy") {
+        Write-Host "  [CANCELADO] Operación abortada por el usuario. No se eliminó ningún recurso." -ForegroundColor Yellow
+        exit 0
+    }
+}
+
+# 2. Ejecutar OpenTofu destroy
+Write-Host "`n[1/1] Ejecutando tofu destroy en plantillas/..." -ForegroundColor Magenta
+
+$infraFile   = Join-Path $ParamDir "infra.tfvars"
+$backendFile = Join-Path $ParamDir "backend.tfvars"
+$frontFile   = Join-Path $ParamDir "frontend.tfvars"
+
+Push-Location $TemplateDir
+try {
+    tofu destroy -auto-approve `
+        -var-file="$infraFile" `
+        -var-file="$backendFile" `
+        -var-file="$frontFile"
+    Write-Host "`n  [OK] Infraestructura destruida exitosamente en Azure para evitar costos." -ForegroundColor Green
+} catch {
+    Write-Host "  [ERROR] Ocurrió un error al ejecutar tofu destroy." -ForegroundColor Red
+    exit 1
+} finally {
+    Pop-Location
+}

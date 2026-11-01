@@ -1,0 +1,40 @@
+# =============================================================================
+# OpenTofu / Terraform - Git Ignore (Infra)
+# =============================================================================
+
+# Directorios de trabajo y plugins de OpenTofu
+.terraform/
+.terraform.lock.hcl
+
+# Archivos de estado local
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Archivos de parámetros sensibles (NUNCA incluir contraseñas en Git)
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+!*.tfvars.example
+!**/*.example.tfvars
+!**/*.tfvars.example
+
+# Planes y artefactos generados
+*.tfplan
+plan_output.txt
+
+# Variables de entorno y configuraciones locales
+.env
+.env.*
+backend.conf
+
+# Llaves SSH y certificados
+*.pem
+*.key
+*.pub
+id_rsa*

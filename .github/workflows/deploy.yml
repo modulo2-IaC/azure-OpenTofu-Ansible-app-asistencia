@@ -1,0 +1,168 @@
+name: CI/CD OpenTofu - Sistema de Asistencia (Azure)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - 'bootstrap/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Acción a ejecutar'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - destroy
+      environment:
+        description: 'Entorno de despliegue'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ===========================================================================
+  # 1. VALIDACIÓN DEVSECOPS (Gitleaks, TFLint, Checkov, Tofu Validate)
+  # ===========================================================================
+  lint-and-scan:
+    name: DevSecOps Lint & Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Escaneo de secretos
+      - name: Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # TFLint
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Ejecutar TFLint
+        run: |
+          tflint --init
+          tflint --config=.tflint.hcl --recursive
+
+      # Checkov
+      - name: Checkov IaC Security Scanner
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infra/plantillas
+          framework: terraform
+          soft_fail: true
+          output_format: cli
+
+      # OpenTofu setup y validación
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: Verificar formato OpenTofu
+        run: tofu fmt -check -recursive
+
+      - name: Validar sintaxis de plantillas
+        working-directory: infra/plantillas
+        run: |
+          tofu init -backend=false
+          tofu validate
+
+  # ===========================================================================
+  # 2. DESPLIEGUE O DESTRUCCIÓN EN MICROSOFT AZURE
+  # ===========================================================================
+  deploy:
+    name: OpenTofu Deploy / Destroy
+    needs: lint-and-scan
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra/plantillas
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.8.2
+
+      - name: OpenTofu Init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: tofu init
+
+      # Despliegue
+      - name: OpenTofu Apply
+        if: github.event.inputs.action != 'destroy'
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
+          TF_VAR_database_url: ${{ secrets.TF_VAR_DATABASE_URL }}
+        run: |
+          tofu apply -auto-approve -no-color \
+            -var-file="../parametros/infra.tfvars" \
+            -var-file="../parametros/backend.tfvars" \
+            -var-file="../parametros/frontend.tfvars"
+
+      # Destrucción bajo demanda
+      - name: OpenTofu Destroy
+        if: github.event.inputs.action == 'destroy'
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TF_VAR_admin_password: ${{ secrets.TF_VAR_ADMIN_PASSWORD }}
+          TF_VAR_database_url: ${{ secrets.TF_VAR_DATABASE_URL }}
+        run: |
+          tofu destroy -auto-approve -no-color \
+            -var-file="../parametros/infra.tfvars" \
+            -var-file="../parametros/backend.tfvars" \
+            -var-file="../parametros/frontend.tfvars"
+
+      # Reporte de salidas en GitHub Actions Step Summary
+      - name: Resumen de Infraestructura en Azure
+        if: always() && github.event.inputs.action != 'destroy'
+        run: |
+          echo "### 🚀 Resumen del Despliegue en Microsoft Azure" >> $GITHUB_STEP_SUMMARY
+          echo "| Recurso | Detalle / Endpoint |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          FRONT_URL=$(tofu output -raw frontend_url 2>/dev/null || echo "N/A")
+          FRONT_IP=$(tofu output -raw frontend_ip_url 2>/dev/null || echo "N/A")
+          BACK_API=$(tofu output -raw backend_api_url 2>/dev/null || echo "N/A")
+          SWAGGER=$(tofu output -raw swagger_docs_url 2>/dev/null || echo "N/A")
+          echo "| **Frontend Web (FQDN)** | [$FRONT_URL]($FRONT_URL) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Frontend Web (IP)** | [$FRONT_IP]($FRONT_IP) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Backend API** | [$BACK_API]($BACK_API) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Swagger Docs** | [$SWAGGER]($SWAGGER) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### 🔑 Credenciales Iniciales" >> $GITHUB_STEP_SUMMARY
+          echo "- **Administrador:** Matrícula \`123456789\` / Contraseña \`123456789\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Estudiante Demo:** Matrícula \`12345600\` / Contraseña \`12345600\`" >> $GITHUB_STEP_SUMMARY
