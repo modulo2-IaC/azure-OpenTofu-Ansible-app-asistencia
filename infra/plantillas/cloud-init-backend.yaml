@@ -1,23 +1,13 @@
 #cloud-config
-# =============================================================================
-# CLOUD-INIT: Backend NestJS + Systemd Service
-# Aprovisionamiento automatizado declarativo con write_files y filebase64
-# =============================================================================
-
 package_update: true
-
 packages:
   - git
   - curl
-  - build-essential
 
 write_files:
-  # 1. Inyección declarativa de package.json codificado en Base64
   - path: /opt/asistencia-backend/package.json
     encoding: b64
     content: ${package_json}
-
-  # 2. Configuración de variables de entorno seguras con permisos 0600
   - path: /etc/asistencia-backend.env
     permissions: "0600"
     content: |
@@ -32,12 +22,10 @@ write_files:
       ADMIN_REGISTRATION_NO=${admin_registration_no}
       ADMIN_PASSWORD=${admin_password}
       ADMIN_FULL_NAME=${admin_full_name}
-
-  # 3. Definición declarativa del servicio systemd para NestJS
   - path: /etc/systemd/system/asistencia-backend.service
     content: |
       [Unit]
-      Description=Servicio Backend Asistencia (NestJS)
+      Description=Asistencia Backend NestJS
       After=network.target
 
       [Service]
@@ -45,107 +33,18 @@ write_files:
       EnvironmentFile=/etc/asistencia-backend.env
       ExecStart=/usr/bin/node dist/main.js
       Restart=always
-      RestartSec=10
       User=asistenciaapp
 
       [Install]
       WantedBy=multi-user.target
 
-  # 4. Permisos sudo para que el usuario administrador pueda gestionar el servicio
-  - path: /etc/sudoers.d/admin-asistencia
-    owner: root:root
-    permissions: "0440"
-    content: |
-      ${admin_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart asistencia-backend, /usr/bin/systemctl reload asistencia-backend, /usr/bin/systemctl status asistencia-backend
-
-  # 5. Script utilitario para actualización y mantenimiento manual
-  - path: /usr/local/bin/deploy-backend.sh
-    owner: root:root
-    permissions: "0755"
-    content: |
-      #!/bin/bash
-      set -e
-      echo "=== [Deploy Backend] Iniciando compilación y despliegue ==="
-      cd /opt/asistencia-backend
-
-      if [ -d .git ]; then
-        echo "[1/5] Actualizando código desde Git (rama ${repo_branch})..."
-        git pull origin ${repo_branch} || git pull || true
-      fi
-
-      if [ ! -f package.json ]; then
-        echo "Error: package.json no encontrado en /opt/asistencia-backend"
-        exit 1
-      fi
-
-      echo "[2/5] Instalando dependencias de Node.js..."
-      npm install
-
-      echo "[3/5] Compilando NestJS..."
-      npm run build
-
-      echo "[4/5] Ejecutando migraciones de base de datos..."
-      npm run migration:run || true
-
-      echo "[5/5] Sembrando cuentas iniciales (Admin y Estudiante)..."
-      npm run seed:admin || true
-      npm run seed:student || true
-
-      echo "[+] Reiniciando servicio con systemd..."
-      sudo systemctl restart asistencia-backend
-      echo "=== [Deploy Backend] Despliegue completado con éxito ==="
-
 runcmd:
-  # 1. Configurar Swap de 1GB para compilación holgada de TypeScript
-  - |
-    if [ ! -f /swapfile ]; then
-      fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
-      chmod 600 /swapfile
-      mkswap /swapfile
-      swapon /swapfile
-      echo '/swapfile none swap sw 0 0' >> /etc/fstab
-    fi
-
-  # 2. Instalar Node.js LTS
-  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash -
-  - apt-get install -y nodejs
-
-  # 3. Preparar estructura de directorios
-  - mkdir -p /opt/asistencia-backend /home/${admin_username}
-
-  # 4. Clonar repositorio Git si se especificó y no existe repositorio local
-  - |
-    if [ -n "${repo_url}" ] && [ ! -d /opt/asistencia-backend/.git ]; then
-      git config --system --add safe.directory /opt/asistencia-backend
-      git clone -b "${repo_branch}" "${repo_url}" /tmp/backend-repo
-      cp -a /tmp/backend-repo/. /opt/asistencia-backend/
-      rm -rf /tmp/backend-repo
-    fi
-
-  # 5. Copiar variables de entorno locales para herramientas CLI (migraciones/semillas)
+  - fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash - && apt-get install -y nodejs
+  - git clone -b ${repo_branch} ${repo_url} /tmp/app && cp -a /tmp/app/. /opt/asistencia-backend/ && rm -rf /tmp/app
   - cp /etc/asistencia-backend.env /opt/asistencia-backend/.env
-  - chmod 600 /opt/asistencia-backend/.env
-
-  # 6. Compilación, migraciones y semillas iniciales de datos
-  - |
-    cd /opt/asistencia-backend
-    if [ -f package.json ]; then
-      npm install
-      npm run build || true
-      npm run migration:run || true
-      npm run seed:admin || true
-      npm run seed:student || true
-    fi
-
-  # 7. Crear usuario de sistema para ejecución segura
+  - cd /opt/asistencia-backend && npm install && npm run build && (npm run migration:run || true) && (npm run seed:admin || true) && (npm run seed:student || true)
   - useradd --system --no-create-home asistenciaapp || true
   - chown -R asistenciaapp:asistenciaapp /opt/asistencia-backend
-
-  # 8. Recargar demonios de systemd e iniciar servicio backend
   - systemctl daemon-reload
   - systemctl enable --now asistencia-backend
-
-  # 9. Enlace simbólico de despliegue para el usuario administrador
-  - ln -sf /usr/local/bin/deploy-backend.sh /home/${admin_username}/deploy.sh
-  - chown -h ${admin_username}:${admin_username} /home/${admin_username}/deploy.sh
-  - 'echo "Cloud-init backend completado: $(date)" >> /var/log/asistencia-setup.log'

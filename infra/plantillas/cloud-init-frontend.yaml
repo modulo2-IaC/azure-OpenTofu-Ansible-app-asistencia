@@ -1,51 +1,31 @@
 #cloud-config
-# =============================================================================
-# CLOUD-INIT: Frontend (React + Vite + Nginx + Systemd)
-# Aprovisionamiento automatizado declarativo con write_files y filebase64
-# =============================================================================
-
 package_update: true
-
 packages:
   - git
   - curl
   - nginx
-  - build-essential
 
 write_files:
-  # 1. Inyección declarativa de package.json codificado en Base64
   - path: /var/www/asistencia-front/package.json
     encoding: b64
     content: ${package_json}
-
-  # 2. Inyección declarativa de index.html codificado en Base64
   - path: /var/www/asistencia-front/index.html
     encoding: b64
     content: ${index_html}
-
-  # 3. Configuración de variables de entorno seguras con permisos 0600
   - path: /etc/asistencia-frontend.env
     permissions: "0600"
     content: |
       AMBIENTE=${ambiente}
       VITE_API_URL=${vite_api_url}
-      BACKEND_HOST=${backend_host}
-
-  # 4. Configuración del servidor Nginx con Reverse Proxy, soporte SPA y caché Vite
-  - path: /etc/nginx/sites-available/asistencia-front
-    owner: root:root
-    permissions: "0644"
+  - path: /etc/nginx/sites-available/default
     content: |
       server {
           listen 80 default_server;
           listen [::]:80 default_server;
-
           root /var/www/asistencia-front/dist;
           index index.html;
-
           server_name _;
 
-          # Reverse Proxy transparente hacia el Backend NestJS (puerto 3000)
           location /api/ {
               proxy_pass http://${backend_host}:3000/api/;
               proxy_http_version 1.1;
@@ -53,38 +33,16 @@ write_files:
               proxy_set_header Connection 'upgrade';
               proxy_set_header Host $host;
               proxy_cache_bypass $http_upgrade;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              proxy_connect_timeout 30s;
-              proxy_read_timeout 60s;
           }
 
-          # Soporte SPA: redirigir todas las rutas a index.html
           location / {
               try_files $uri $uri/ /index.html;
           }
-
-          # Caché optimizada para assets generados por Vite
-          location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-              expires 1y;
-              add_header Cache-Control "public, immutable";
-              try_files $uri =404;
-          }
-
-          # Compresión Gzip
-          gzip on;
-          gzip_vary on;
-          gzip_min_length 1024;
-          gzip_proxied expired no-cache no-store private auth;
-          gzip_types text/plain text/css text/xml text/javascript application/javascript application/json image/svg+xml;
       }
-
-  # 5. Definición declarativa de servicio systemd para Frontend
   - path: /etc/systemd/system/asistencia-frontend.service
     content: |
       [Unit]
-      Description=Servicio Web Frontend Asistencia (Nginx Reverse Proxy)
+      Description=Asistencia Frontend Nginx
       After=network.target nginx.service
       Wants=nginx.service
 
@@ -97,97 +55,16 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
-  # 6. Permiso sudo para que el usuario administrador pueda recargar el servicio web
-  - path: /etc/sudoers.d/admin-nginx
-    owner: root:root
-    permissions: "0440"
-    content: |
-      ${admin_username} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx, /usr/bin/systemctl restart asistencia-frontend
-
-  # 7. Script utilitario para actualización y mantenimiento manual
-  - path: /usr/local/bin/deploy-frontend.sh
-    owner: root:root
-    permissions: "0755"
-    content: |
-      #!/bin/bash
-      set -e
-      echo "=== [Deploy Frontend] Iniciando compilación y despliegue ==="
-      cd /var/www/asistencia-front
-
-      if [ -d .git ]; then
-        echo "[1/4] Actualizando código desde Git (rama ${repo_branch})..."
-        git pull origin ${repo_branch} || git pull || true
-      fi
-
-      if [ ! -f package.json ]; then
-        echo "Error: package.json no encontrado en /var/www/asistencia-front"
-        exit 1
-      fi
-
-      echo "[2/4] Instalando dependencias..."
-      npm install
-
-      echo "[3/4] Compilando con Vite..."
-      npm run build
-
-      echo "[4/4] Recargando servicio web Nginx..."
-      sudo systemctl reload nginx
-      echo "=== [Deploy Frontend] Despliegue completado con éxito ==="
-
 runcmd:
-  # 1. Habilitar 1GB Swap para compilación fluida de Vite / TypeScript
-  - |
-    if [ ! -f /swapfile ]; then
-      fallocate -l 1G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=1024
-      chmod 600 /swapfile
-      mkswap /swapfile
-      swapon /swapfile
-      echo '/swapfile none swap sw 0 0' >> /etc/fstab
-    fi
-
-  # 2. Instalar Node.js LTS
-  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash -
-  - apt-get install -y nodejs
-
-  # 3. Preparar directorios base
-  - mkdir -p /var/www/asistencia-front/dist /home/${admin_username}
-
-  # 4. Activar configuración del sitio en Nginx
-  - rm -f /etc/nginx/sites-enabled/default
-  - ln -sf /etc/nginx/sites-available/asistencia-front /etc/nginx/sites-enabled/
-
-  # 5. Clonar repositorio Git si se especificó y no existe localmente
-  - |
-    if [ -n "${repo_url}" ] && [ ! -d /var/www/asistencia-front/.git ]; then
-      git config --system --add safe.directory /var/www/asistencia-front
-      git clone -b "${repo_branch}" "${repo_url}" /tmp/frontend-repo
-      cp -a /tmp/frontend-repo/. /var/www/asistencia-front/
-      rm -rf /tmp/frontend-repo
-    fi
-
-  # 6. Copiar archivo .env para compilación de Vite
-  - cp /etc/asistencia-frontend.env /var/www/asistencia-front/.env
-  - chmod 644 /var/www/asistencia-front/.env
-
-  # 7. Compilación con Vite
-  - |
-    cd /var/www/asistencia-front
-    if [ -f package.json ]; then
-      npm install
-      npm run build || true
-    fi
-
-  # 8. Ajustar permisos para www-data y usuario de sistema
+  - fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash - && apt-get install -y nodejs
+  - git clone -b ${repo_branch} ${repo_url} /tmp/app && cp -a /tmp/app/. /var/www/asistencia-front/ && rm -rf /tmp/app
+  - echo "VITE_API_URL=${vite_api_url}" > /var/www/asistencia-front/.env
+  - cd /var/www/asistencia-front && npm install && npm run build
   - useradd --system --no-create-home asistenciaapp || true
   - chown -R www-data:www-data /var/www/asistencia-front
   - chmod -R 755 /var/www/asistencia-front/dist
-
-  # 9. Recargar demonios de systemd e iniciar Nginx y el servicio frontend
   - systemctl daemon-reload
+  - systemctl restart nginx
   - systemctl enable --now nginx
   - systemctl enable --now asistencia-frontend
-
-  # 10. Enlace simbólico de conveniencia para deploy manual
-  - ln -sf /usr/local/bin/deploy-frontend.sh /home/${admin_username}/deploy.sh
-  - chown -h ${admin_username}:${admin_username} /home/${admin_username}/deploy.sh
-  - 'echo "Cloud-init frontend completado: $(date)" >> /var/log/asistencia-setup.log'
