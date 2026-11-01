@@ -2,6 +2,8 @@
 
 Infraestructura como Código (IaC) en **Microsoft Azure** diseñada bajo principios de **Alta Cohesión y Bajo Acoplamiento** para desplegar el **Backend NestJS** y **Frontend React/Vite/Nginx** en máquinas virtuales Linux Ubuntu optimizadas para la capa gratuita (Azure Free Trial, región `swedencentral`).
 
+El aprovisionamiento del software se realiza en el primer arranque mediante **Cloud-Init declarativo** con inyección de archivos en Base64 (`write_files`), variables de entorno protegidas (`0600`) y servicios nativos de **Systemd**.
+
 ---
 
 ## 📁 Estructura del Repositorio
@@ -14,7 +16,7 @@ El proyecto se organiza en dos subproyectos desacoplados:
 ```text
 hardware/
 ├── README.md                            # Documentación general del repositorio
-├── IaC.md                               # Guía de los 11 Principios DevSecOps
+├── IaC.md                               # Guía de los 11 Principios DevSecOps (incluye Cloud-Init declarativo y Systemd)
 ├── .gitignore                           # Exclusiones de Git
 ├── .tflint.hcl                          # Configuración de linter estático con ruleset AzureRM
 ├── .gitleaks.toml                       # Reglas de detección y prevención de secretos
@@ -39,11 +41,11 @@ hardware/
     │   ├── main.tf                      # Orquestador raíz (Resource Group, tags y sufijo)
     │   ├── red.tf                       # VNet (10.0.0.0/16), Subredes, IPs públicas y NICs
     │   ├── seguridad.tf                 # Firewalls perimetrales (NSGs) y JWT Secret
-    │   ├── backend.tf                   # Máquina Virtual Backend (NestJS + PM2)
-    │   ├── frontend.tf                  # Máquina Virtual Frontend (React/Vite + Nginx)
+    │   ├── backend.tf                   # VM Backend (NestJS + Systemd, Cloud-Init declarativo write_files)
+    │   ├── frontend.tf                  # VM Frontend (React/Vite + Nginx + Systemd, Cloud-Init write_files)
     │   ├── monitoreo.tf                 # Log Analytics Workspace, Action Group y alertas CPU
-    │   ├── cloud-init-backend.yaml      # Script de arranque: Node.js 20, PM2, compilación y seeds
-    │   ├── cloud-init-frontend.yaml     # Script de arranque: Nginx Reverse Proxy, build Vite y SPA
+    │   ├── cloud-init-backend.yaml      # Cloud-Init conciso: write_files (package.json b64, .env 0600, service) + runcmd
+    │   ├── cloud-init-frontend.yaml     # Cloud-Init conciso: write_files (package.json b64, index.html b64, Nginx) + runcmd
     │   ├── variables.tf                 # Definición tipada de parámetros de entrada
     │   ├── outputs.tf                   # Salidas consolidadas (URLs, FQDNs, IPs y credenciales)
     │   └── versions.tf                  # Configuración de OpenTofu y backend azurerm
@@ -65,6 +67,45 @@ hardware/
     └── politicas/                       # Gobierno y protección de infraestructura
         └── proteccion-recursos.md       # Resource Locks y meta-argumento prevent_destroy
 ```
+
+---
+
+## ⚙️ Aprovisionamiento Automatizado: Cloud-Init Declarativo y Systemd
+
+Tanto el Backend como el Frontend se aprovisionan de forma completamente automatizada en el primer arranque de las máquinas virtuales Linux, utilizando la sintaxis estándar de **Cloud-Init** (`write_files` + `runcmd`) y servicios nativos de **Systemd**.
+
+### 1. Inyección de Manifiestos con `filebase64` en OpenTofu
+En las plantillas [`backend.tf`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/backend.tf) y [`frontend.tf`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/frontend.tf), los archivos de la aplicación (`package.json`, `index.html`) se cargan y codifican en Base64 para inyectarse de forma segura en las plantillas YAML:
+
+```hcl
+locals {
+  carpeta_app_backend = "${path.module}/../../../../asistencia-backend"
+  backend_package_json = fileexists("${local.carpeta_app_backend}/package.json") ? filebase64("${local.carpeta_app_backend}/package.json") : base64encode("...")
+}
+
+resource "azurerm_linux_virtual_machine" "backend_vm" {
+  ...
+  custom_data = base64encode(templatefile("${path.module}/cloud-init-backend.yaml", {
+    package_json = local.backend_package_json
+    ambiente     = var.environment
+    ...
+  }))
+}
+```
+
+### 2. Estructura Declarativa `#cloud-config`
+Los archivos [`cloud-init-backend.yaml`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/cloud-init-backend.yaml) y [`cloud-init-frontend.yaml`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/cloud-init-frontend.yaml) implementan una configuración corta, limpia y funcional:
+
+* **`write_files`**:
+  * **Archivos de aplicación**: decodificados automáticamente en destino (`encoding: b64`).
+  * **Variables de entorno (`.env`)**: permisos estrictos `permissions: "0600"` para proteger credenciales y secretos de base de datos.
+  * **Unidades de servicio Systemd**: `/etc/systemd/system/asistencia-backend.service` y `/etc/systemd/system/asistencia-frontend.service`.
+* **`runcmd`**:
+  * **Memoria Swap (1GB)**: previene errores *Out-Of-Memory* (OOM) durante la compilación de TypeScript y Vite en instancias con recursos ajustados.
+  * **Sincronización de código**: clona el código fuente desde la rama `dev` del repositorio oficial.
+  * **Compilación y ciclo de vida**: ejecuta `npm install`, `npm run build`, migraciones TypeORM (`migration:run`) y semillas (`seed:admin`, `seed:student`).
+  * **Usuario de servicio**: creación del usuario del sistema sin shell (`asistenciaapp`) y asignación de permisos de propiedad.
+  * **Inicio del servicio**: `systemctl daemon-reload` y `systemctl enable --now <servicio>`.
 
 ---
 
