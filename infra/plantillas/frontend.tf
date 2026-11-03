@@ -1,15 +1,7 @@
 # =============================================================================
 # MÓDULO DE CÓMPUTO: FRONTEND REACT + VITE + NGINX (frontend.tf)
-# Aprovisionamiento declarativo con Cloud-Init, write_files y filebase64
+# Aprovisionamiento declarativo con Cloud-Init y Nginx
 # =============================================================================
-
-locals {
-  carpeta_app_frontend = "${path.module}/../../../../asistencia-front"
-
-  # Carga declarativa de archivos con filebase64 y fallback seguro
-  frontend_package_json = fileexists("${local.carpeta_app_frontend}/package.json") ? filebase64("${local.carpeta_app_frontend}/package.json") : base64encode("{\n  \"name\": \"asistencia-front\",\n  \"version\": \"1.0.0\"\n}")
-  frontend_index_html   = fileexists("${local.carpeta_app_frontend}/index.html") ? filebase64("${local.carpeta_app_frontend}/index.html") : base64encode("<!DOCTYPE html><html><head><title>Asistencia</title></head><body><div id=\"root\"></div></body></html>")
-}
 
 resource "azurerm_linux_virtual_machine" "frontend_vm" {
   name                = local.vm_frontend_name
@@ -42,10 +34,10 @@ resource "azurerm_linux_virtual_machine" "frontend_vm" {
     version   = "latest"
   }
 
-  # Aprovisionamiento automatizado de inicio con Cloud-Init (write_files b64 + systemd)
+  # Aprovisionamiento automatizado de inicio con Cloud-Init (write_files + systemd)
   custom_data = base64encode(templatefile("${path.module}/cloud-init-frontend.yaml", {
-    package_json   = local.frontend_package_json
-    index_html     = local.frontend_index_html
+    backend_port   = var.backend_port
+    git_branch     = var.frontend_repo_branch
     ambiente       = var.environment
     admin_username = var.admin_username
     node_version   = var.node_version

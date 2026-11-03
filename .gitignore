@@ -26,6 +26,7 @@ override.tf.json
 
 # Planes y artefactos generados
 *.tfplan
+tfplan
 plan_output.txt
 
 # Variables de entorno y configuraciones locales

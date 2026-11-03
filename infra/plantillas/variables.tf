@@ -125,6 +125,12 @@ variable "frontend_repo_branch" {
   default     = "dev"
 }
 
+variable "backend_port" {
+  description = "Puerto TCP en el que se ejecuta la aplicación Backend"
+  type        = number
+  default     = 3000
+}
+
 variable "vite_api_url" {
   description = "URL base de la API del backend inyectada al frontend (vacío = ruta relativa /api vía Nginx)"
   type        = string

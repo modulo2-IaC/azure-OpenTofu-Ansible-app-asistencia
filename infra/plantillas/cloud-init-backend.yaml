@@ -3,15 +3,13 @@ package_update: true
 packages:
   - git
   - curl
+  - build-essential
 
 write_files:
-  - path: /opt/asistencia-backend/package.json
-    encoding: b64
-    content: ${package_json}
   - path: /etc/asistencia-backend.env
     permissions: "0600"
     content: |
-      PORT=3000
+      PORT=${app_port}
       AMBIENTE=${ambiente}
       NODE_ENV=production
       DATABASE_URL=${database_url}
@@ -22,6 +20,7 @@ write_files:
       ADMIN_REGISTRATION_NO=${admin_registration_no}
       ADMIN_PASSWORD=${admin_password}
       ADMIN_FULL_NAME=${admin_full_name}
+
   - path: /etc/systemd/system/asistencia-backend.service
     content: |
       [Unit]
@@ -29,22 +28,26 @@ write_files:
       After=network.target
 
       [Service]
-      WorkingDirectory=/opt/asistencia-backend
+      WorkingDirectory=/opt/app
       EnvironmentFile=/etc/asistencia-backend.env
       ExecStart=/usr/bin/node dist/main.js
       Restart=always
+      RestartSec=5
       User=asistenciaapp
 
       [Install]
       WantedBy=multi-user.target
 
 runcmd:
-  - fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
-  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash - && apt-get install -y nodejs
-  - git clone -b ${repo_branch} ${repo_url} /tmp/app && cp -a /tmp/app/. /opt/asistencia-backend/ && rm -rf /tmp/app
-  - cp /etc/asistencia-backend.env /opt/asistencia-backend/.env
-  - cd /opt/asistencia-backend && npm install && npm run build && (npm run migration:run || true) && (npm run seed:admin || true) && (npm run seed:student || true)
+  - fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - apt-get purge -y nodejs npm 2>/dev/null || true
+  - curl -fsSL https://deb.nodesource.com/setup_${node_version}.x | bash - && apt-get install -y -o Dpkg::Options::="--force-overwrite" nodejs
+  - rm -rf /opt/app && git clone -b "${git_branch}" "${repo_url}" /opt/app
+  - cp /etc/asistencia-backend.env /opt/app/.env
+  - cd /opt/app && npm install && npm run build
+  - cd /opt/app && set -a && . /etc/asistencia-backend.env && set +a && (npm run migration:run || (sleep 3 && npm run migration:run)) && npm run seed:admin && npm run seed:student
   - useradd --system --no-create-home asistenciaapp || true
-  - chown -R asistenciaapp:asistenciaapp /opt/asistencia-backend
-  - systemctl daemon-reload
-  - systemctl enable --now asistencia-backend
+  - chown -R asistenciaapp:asistenciaapp /opt/app
+  - systemctl daemon-reload && systemctl enable --now asistencia-backend
+  - (cd /opt/app && set -a && . /etc/asistencia-backend.env && set +a && npm run seed:demo > /dev/null 2>&1 &)
+  - 'echo "Setup Backend completado exitosamente: $(date)" >> /var/log/asistencia-setup.log'

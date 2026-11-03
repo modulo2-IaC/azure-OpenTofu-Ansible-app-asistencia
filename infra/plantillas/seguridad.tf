@@ -31,7 +31,7 @@ resource "azurerm_network_security_group" "nsg_backend" {
     destination_address_prefix = "*"
   }
 
-  # Permite acceso a la API REST NestJS (puerto 3000)
+  # Permite acceso a la API REST NestJS
   security_rule {
     name                       = "Allow-Backend-HTTP"
     priority                   = 110
@@ -39,7 +39,7 @@ resource "azurerm_network_security_group" "nsg_backend" {
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "3000"
+    destination_port_range     = tostring(var.backend_port)
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }

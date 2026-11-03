@@ -1,14 +1,7 @@
 # =============================================================================
 # MÓDULO DE CÓMPUTO: BACKEND NESTJS + SYSTEMD (backend.tf)
-# Aprovisionamiento declarativo con Cloud-Init, write_files y filebase64
+# Aprovisionamiento declarativo con Cloud-Init y Systemd
 # =============================================================================
-
-locals {
-  carpeta_app_backend = "${path.module}/../../../../asistencia-backend"
-
-  # Carga de archivos con filebase64 y fallback seguro
-  backend_package_json = fileexists("${local.carpeta_app_backend}/package.json") ? filebase64("${local.carpeta_app_backend}/package.json") : base64encode("{\n  \"name\": \"asistencia-backend\",\n  \"version\": \"1.0.0\"\n}")
-}
 
 resource "azurerm_linux_virtual_machine" "backend_vm" {
   name                = local.vm_backend_name
@@ -41,9 +34,10 @@ resource "azurerm_linux_virtual_machine" "backend_vm" {
     version   = "latest"
   }
 
-  # Aprovisionamiento automatizado de inicio con Cloud-Init (write_files b64 + systemd)
+  # Aprovisionamiento automatizado de inicio con Cloud-Init (write_files + systemd)
   custom_data = base64encode(templatefile("${path.module}/cloud-init-backend.yaml", {
-    package_json          = local.backend_package_json
+    app_port              = var.backend_port
+    git_branch            = var.backend_repo_branch
     ambiente              = var.environment
     admin_username        = var.admin_username
     node_version          = var.node_version
