@@ -3,15 +3,12 @@ package_update: true
 packages:
   - git
   - curl
-  - build-essential
 
 write_files:
   - path: /etc/asistencia-backend.env
     permissions: "0600"
     content: |
       PORT=${app_port}
-      AMBIENTE=${ambiente}
-      NODE_ENV=production
       DATABASE_URL=${database_url}
       JWT_SECRET=${jwt_secret}
       CORS_ORIGIN=${cors_origin}
@@ -19,7 +16,6 @@ write_files:
       RUN_MIGRATIONS=${run_migrations}
       ADMIN_REGISTRATION_NO=${admin_registration_no}
       ADMIN_PASSWORD=${admin_password}
-      ADMIN_FULL_NAME=${admin_full_name}
 
   - path: /etc/systemd/system/asistencia-backend.service
     content: |
