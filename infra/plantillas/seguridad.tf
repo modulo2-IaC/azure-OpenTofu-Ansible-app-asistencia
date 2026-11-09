@@ -9,6 +9,67 @@ resource "random_password" "jwt_secret" {
   special = false
 }
 
+# 2. Generación de contraseña aleatoria segura para PostgreSQL
+resource "random_password" "db_password" {
+  length  = 24
+  special = false
+}
+
+# -----------------------------------------------------------------------------
+# FIREWALL (NSG) - DATABASE (PostgreSQL)
+# -----------------------------------------------------------------------------
+resource "azurerm_network_security_group" "nsg_database" {
+  name                = "nsg-${local.name_prefix}-database"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = local.common_tags
+
+  # Permite administración remota vía SSH para Ansible
+  security_rule {
+    name                       = "Allow-SSH"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  # Permite acceso al puerto 5432 EXCLUSIVAMENTE desde la subred del Backend
+  security_rule {
+    name                       = "Allow-Postgres-From-Backend"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = tostring(var.db_port)
+    source_address_prefix      = azurerm_subnet.subnet_backend.address_prefixes[0]
+    destination_address_prefix = "*"
+  }
+
+  # Bloqueo explícito del puerto 5432 desde Internet
+  security_rule {
+    name                       = "Deny-Postgres-Internet"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = tostring(var.db_port)
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+}
+
+# Asociación NSG Database a la interfaz de red
+resource "azurerm_network_interface_security_group_association" "nic_nsg_database" {
+  network_interface_id      = azurerm_network_interface.nic_database.id
+  network_security_group_id = azurerm_network_security_group.nsg_database.id
+}
+
 # -----------------------------------------------------------------------------
 # FIREWALL (NSG) - BACKEND
 # -----------------------------------------------------------------------------

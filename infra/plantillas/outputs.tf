@@ -65,6 +65,29 @@ output "ssh_command_frontend" {
 }
 
 # -----------------------------------------------------------------------------
+# DATABASE OUTPUTS
+# -----------------------------------------------------------------------------
+output "database_public_ip" {
+  description = "Dirección IP pública estática de la VM de Base de Datos (para Ansible)"
+  value       = azurerm_public_ip.pip_database.ip_address
+}
+
+output "database_private_ip" {
+  description = "Dirección IP privada de la VM de Base de Datos (para Backend dentro de la VNet)"
+  value       = azurerm_network_interface.nic_database.private_ip_address
+}
+
+output "database_fqdn" {
+  description = "FQDN de Azure asignado a la Base de Datos"
+  value       = azurerm_public_ip.pip_database.fqdn
+}
+
+output "ssh_command_database" {
+  description = "Comando SSH para conectarse a la máquina virtual de Base de Datos"
+  value       = "ssh -i ${var.ssh_private_key_path} ${var.admin_username}@${azurerm_public_ip.pip_database.ip_address}"
+}
+
+# -----------------------------------------------------------------------------
 # RESUMEN DE CREDENCIALES INICIALES
 # -----------------------------------------------------------------------------
 output "credentials_summary" {

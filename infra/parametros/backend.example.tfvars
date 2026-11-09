@@ -13,7 +13,13 @@ node_version = "20"
 backend_repo_url    = "https://github.com/modulo2-IaC/app-asistencia-backend.git"
 backend_repo_branch = "dev"
 
-database_url = "postgresql://usuario:contrasena@tu-host.neon.tech/neondb?sslmode=require"
+# Base de datos PostgreSQL en Azure (VM dedicada)
+database_vm_size = "Standard_B1s"
+db_name          = "asistencia_db"
+db_username      = "asistencia_user"
+# db_password    = "" # Si está vacío, OpenTofu genera una contraseña segura automáticamente
+# database_url   = "" # Si está vacío, OpenTofu construye la URL hacia la IP privada de la VM en Azure
+
 jwt_secret   = ""
 
 cors_origin    = "*"

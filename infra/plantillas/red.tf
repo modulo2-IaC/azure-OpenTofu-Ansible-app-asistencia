@@ -28,7 +28,26 @@ resource "azurerm_subnet" "subnet_frontend" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
-# 4. IP Pública para la VM del Backend (Standard SKU compatible con Free Trial)
+# 4. Subred dedicada para la VM de Base de Datos PostgreSQL (10.0.3.0/24)
+resource "azurerm_subnet" "subnet_database" {
+  name                 = "subnet-database"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.3.0/24"]
+}
+
+# 5. IP Pública para la VM de la Base de Datos (acceso SSH para aprovisionamiento con Ansible)
+resource "azurerm_public_ip" "pip_database" {
+  name                = "pip-${local.name_prefix}-database"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  domain_name_label   = local.dns_database_label
+  tags                = local.common_tags
+}
+
+# 6. IP Pública para la VM del Backend (Standard SKU compatible con Free Trial)
 resource "azurerm_public_ip" "pip_backend" {
   name                = "pip-${local.name_prefix}-backend"
   location            = azurerm_resource_group.rg.location
@@ -39,7 +58,7 @@ resource "azurerm_public_ip" "pip_backend" {
   tags                = local.common_tags
 }
 
-# 5. IP Pública para la VM del Frontend (Standard SKU)
+# 7. IP Pública para la VM del Frontend (Standard SKU)
 resource "azurerm_public_ip" "pip_frontend" {
   name                = "pip-${local.name_prefix}-frontend"
   location            = azurerm_resource_group.rg.location
@@ -50,7 +69,22 @@ resource "azurerm_public_ip" "pip_frontend" {
   tags                = local.common_tags
 }
 
-# 6. Tarjeta de Red Virtual (NIC) para el Backend
+# 8. Tarjeta de Red Virtual (NIC) para la Base de Datos
+resource "azurerm_network_interface" "nic_database" {
+  name                = "nic-${local.name_prefix}-database"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  tags                = local.common_tags
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.subnet_database.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.pip_database.id
+  }
+}
+
+# 9. Tarjeta de Red Virtual (NIC) para el Backend
 resource "azurerm_network_interface" "nic_backend" {
   name                = "nic-${local.name_prefix}-backend"
   location            = azurerm_resource_group.rg.location
@@ -65,7 +99,7 @@ resource "azurerm_network_interface" "nic_backend" {
   }
 }
 
-# 7. Tarjeta de Red Virtual (NIC) para el Frontend
+# 10. Tarjeta de Red Virtual (NIC) para el Frontend
 resource "azurerm_network_interface" "nic_frontend" {
   name                = "nic-${local.name_prefix}-frontend"
   location            = azurerm_resource_group.rg.location

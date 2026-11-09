@@ -1,9 +1,14 @@
 # Sistema de Asistencia — OpenTofu + Ansible (Microsoft Azure)
 
-Infraestructura como Código (IaC) y Gestión de Configuración en **Microsoft Azure** diseñada bajo principios de **Alta Cohesión y Bajo Acoplamiento** para desplegar el **Backend NestJS** y **Frontend React/Vite/Nginx** en máquinas virtuales Linux Ubuntu optimizadas para la capa gratuita (Azure Free Trial, región `swedencentral`).
+Infraestructura como Código (IaC) y Gestión de Configuración en **Microsoft Azure** diseñada bajo arquitectura **3-Tier (Tres Capas)** y principios de **Alta Cohesión y Bajo Acoplamiento** para desplegar de forma autocontenida:
+- **Capa de Datos**: Servidor de Base de Datos **PostgreSQL** en máquina virtual Linux dedicada y aislada en subred privada (`10.0.3.0/24`).
+- **Capa de Aplicación**: API REST **NestJS** gestionada por **Systemd** en subred privada (`10.0.1.0/24`).
+- **Capa Web**: Frontend **React/Vite** servido por **Nginx** como *Reverse Proxy* en subred (`10.0.2.0/24`).
 
-- **OpenTofu**: Aprovisiona la infraestructura cloud base (VNet, Subredes, IPs públicas, NSGs, NICs y Máquinas Virtuales) y exporta dinámicamente las IPs al inventario de Ansible.
-- **Ansible**: Gestiona la configuración del sistema operativo, memoria swap, dependencias (Node.js 20, Nginx), clonación de código, compilación, variables de entorno protegidas (`0600`), migraciones TypeORM, semillas y servicios nativos de **Systemd**.
+Toda la solución está optimizada para la capa gratuita (Azure Free Trial, región `swedencentral`).
+
+- **OpenTofu**: Aprovisiona la infraestructura cloud base (VNet, 3 Subredes, IPs públicas, NSGs con aislamiento perimetral, NICs y 3 Máquinas Virtuales) y exporta dinámicamente las IPs y credenciales al inventario de Ansible.
+- **Ansible**: Gestiona la configuración del sistema operativo, memoria swap, dependencias (PostgreSQL, Node.js 20, Nginx), clonación de código, compilación, variables de entorno protegidas (`0600`), migraciones TypeORM, semillas y servicios nativos de **Systemd**.
 
 ---
 
@@ -48,18 +53,19 @@ hardware/
     ├── .gitignore                       # Exclusiones de Git para infra
     ├── plantillas/                      # Plantillas modulares OpenTofu
     │   ├── main.tf                      # Orquestador raíz (Resource Group, tags y sufijo)
-    │   ├── red.tf                       # VNet (10.0.0.0/16), Subredes, IPs públicas y NICs
-    │   ├── seguridad.tf                 # Firewalls perimetrales (NSGs) y JWT Secret
+    │   ├── red.tf                       # VNet (10.0.0.0/16), 3 Subredes, IPs públicas y NICs
+    │   ├── seguridad.tf                 # Firewalls perimetrales (NSGs), JWT Secret y password DB
+    │   ├── database.tf                  # VM Database (PostgreSQL Server, subred aislada 10.0.3.0/24)
     │   ├── backend.tf                   # VM Backend (NestJS + Systemd, autenticación SSH)
     │   ├── frontend.tf                  # VM Frontend (React/Vite + Nginx + Systemd, autenticación SSH)
     │   ├── monitoreo.tf                 # Log Analytics Workspace, Action Group y alertas CPU
-    │   ├── ansible_inventory.tf         # Generador dinámico de inventario para Ansible
+    │   ├── ansible_inventory.tf         # Generador dinámico de inventario para Ansible (3-Tier)
     │   ├── variables.tf                 # Definición tipada de parámetros de entrada
     │   ├── outputs.tf                   # Salidas consolidadas (URLs, FQDNs, IPs y credenciales)
     │   └── versions.tf                  # Configuración de OpenTofu y backend azurerm
     ├── parametros/                      # Separación de parámetros por responsabilidad
     │   ├── infra.tfvars                 # Parámetros de red, región, acceso SSH y alertas
-    │   ├── backend.tfvars               # Parámetros de DB Neon, JWT, CORS y repo backend
+    │   ├── backend.tfvars               # Parámetros de VM DB PostgreSQL, JWT, CORS y repo backend
     │   ├── frontend.tfvars              # Parámetros del repositorio frontend y API URL
     │   └── *.example.tfvars             # Plantillas de ejemplo para versionado seguro
     ├── reportes/                        # Auditoría DevSecOps y análisis de código
@@ -78,11 +84,16 @@ hardware/
     ├── inventory/                       # Inventario de servidores
     │   ├── hosts.ini                    # Generado dinámicamente por OpenTofu (ignorado en Git)
     │   ├── hosts.example.ini            # Plantilla de referencia
-    │   └── group_vars/                  # Variables agrupadas (all, backend, frontend)
+    │   └── group_vars/                  # Variables agrupadas (all, database, backend, frontend)
+    │       ├── all.yml                  # Variables comunes (Swap, tz, paquetes)
+    │       ├── database.yml             # Variables de PostgreSQL (usuario, base de datos, puerto)
+    │       ├── backend.yml              # Variables de NestJS (rutas, puerto 3000, repo)
+    │       └── frontend.yml             # Variables de Vite y Nginx (usuario www-data, repo)
     └── playbooks/                       # Playbooks de aprovisionamiento y despliegue
-        ├── site.yml                     # Playbook maestro (Backend + Frontend)
-        ├── backend.yml                  # Playbook autónomo para el Backend (Swap, Node.js, NestJS, Systemd)
-        ├── frontend.yml                 # Playbook autónomo para el Frontend (Swap, Node.js, Nginx, Vite)
+        ├── site.yml                     # Playbook maestro (Database + Backend + Frontend)
+        ├── database.yml                 # Playbook autónomo para PostgreSQL Server (10.0.3.0/24)
+        ├── backend.yml                  # Playbook autónomo para NestJS (Swap, Node.js, Systemd)
+        ├── frontend.yml                 # Playbook autónomo para Frontend (Swap, Node.js, Nginx, Vite)
         ├── ping.yml                     # Playbook de prueba de conectividad
         └── templates/                   # Plantillas Jinja2 consolidadas
             ├── asistencia-backend.env.j2
@@ -93,10 +104,13 @@ hardware/
 
 ---
 
-## ⚙️ Arquitectura Desacoplada: OpenTofu + Ansible
+## ⚙️ Arquitectura Desacoplada: OpenTofu + Ansible (3-Tier)
 
-1. **OpenTofu (`infra/`)**: Aprovisiona la infraestructura base en Azure (VNet, Subredes, IPs públicas, NSGs, NICs y Máquinas Virtuales Ubuntu puras). Utiliza autenticación exclusiva por par de claves SSH (`asistencia_vm`) y exporta dinámicamente las IPs públicas hacia [`ansible/inventory/hosts.ini`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu-Ansible/hardware/ansible/inventory/hosts.ini).
-2. **Ansible (`ansible/`)**: Toma el control del sistema operativo mediante playbooks autónomos e integrados (`backend.yml` y `frontend.yml`) para configurar memoria Swap, instalar Node.js 20 LTS, clonar repositorios, inyectar variables de entorno protegidas (`0600`), compilar proyectos, ejecutar migraciones y levantar servicios con Systemd y Nginx.
+1. **OpenTofu (`infra/`)**: Aprovisiona la infraestructura base en Azure (VNet `10.0.0.0/16`, 3 Subredes dedicadas, IPs públicas, NSGs con aislamiento perimetral, NICs y 3 Máquinas Virtuales Ubuntu puras). Utiliza autenticación exclusiva por par de claves SSH (`asistencia_vm`) y exporta dinámicamente las IPs públicas y privadas hacia [`ansible/inventory/hosts.ini`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu-Ansible/hardware/ansible/inventory/hosts.ini).
+2. **Ansible (`ansible/`)**: Toma el control del sistema operativo mediante playbooks autónomos e integrados ejecutados en estricto orden de dependencias:
+   - **`database.yml`**: Instala PostgreSQL, configura escucha en red privada (`listen_addresses = '*'`), reglas `pg_hba.conf` para la subred backend y crea la base de datos `asistencia_db` y usuario `asistencia_user`.
+   - **`backend.yml`**: Configura memoria Swap, instala Node.js 20 LTS, clona la API NestJS, inyecta variables protegidas (`0600`) apuntando a la **IP privada de la VM Database** (`sslmode=disable`), compila, ejecuta migraciones TypeORM/seeds y levanta el servicio con Systemd.
+   - **`frontend.yml`**: Instala Node.js 20 LTS y Nginx, clona el frontend, compila la SPA con Vite, configura el VirtualHost Reverse Proxy (`/api` -> Backend) y reinicia Nginx.
 
 ---
 
@@ -148,10 +162,11 @@ Si prefieres ejecutar cada fase de manera independiente:
 # 3. Simulación Dry-Run (previsualizar cambios sin ejecutarlos)
 .\scripts\run-ansible.ps1 check
 
-# 4. Desplegar configuración y aplicaciones (Backend + Frontend)
+# 4. Desplegar configuración y aplicaciones (Database + Backend + Frontend)
 .\scripts\run-ansible.ps1 deploy
 
 # 5. Desplegar un solo componente
+.\scripts\run-ansible.ps1 database
 .\scripts\run-ansible.ps1 backend
 .\scripts\run-ansible.ps1 frontend
 

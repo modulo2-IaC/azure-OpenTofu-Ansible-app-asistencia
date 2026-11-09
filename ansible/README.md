@@ -38,10 +38,11 @@ cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4
 # 3. Modo Simulación (Dry-Run): previsualizar cambios sin ejecutarlos
 .\scripts\run-ansible.ps1 check
 
-# 4. Desplegar toda la solución (Backend + Frontend)
+# 4. Desplegar toda la solución (Database + Backend + Frontend)
 .\scripts\run-ansible.ps1 deploy
 
 # 5. Desplegar únicamente un componente
+.\scripts\run-ansible.ps1 database
 .\scripts\run-ansible.ps1 backend
 .\scripts\run-ansible.ps1 frontend
 
@@ -64,10 +65,12 @@ ansible/
 │   ├── hosts.example.ini       # Plantilla de ejemplo
 │   └── group_vars/
 │       ├── all.yml             # Variables comunes (node_version, swap_size_gb, tz)
-│       ├── backend.yml         # Variables de NestJS, TypeORM, Neon PostgreSQL y JWT
+│       ├── database.yml        # Variables de PostgreSQL (usuario, base de datos, puerto)
+│       ├── backend.yml         # Variables de NestJS, TypeORM y variables de entorno
 │       └── frontend.yml        # Variables de Vite, Reverse Proxy y Nginx
 └── playbooks/
-    ├── site.yml                # Orquestador principal (ejecuta backend + frontend)
+    ├── site.yml                # Orquestador principal (ejecuta database + backend + frontend)
+    ├── database.yml            # Playbook autónomo para PostgreSQL Server (10.0.3.0/24)
     ├── backend.yml             # Playbook autónomo para el Backend (Swap, Node.js, NestJS, Systemd)
     ├── frontend.yml            # Playbook autónomo para el Frontend (Swap, Node.js, Nginx, Vite)
     ├── ping.yml                # Playbook rápido de diagnóstico de red y SSH

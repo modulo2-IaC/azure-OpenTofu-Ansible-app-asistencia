@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Script unificado de despliegue: OpenTofu + Ansible (Microsoft Azure).
 
@@ -141,8 +141,10 @@ if ($Target -in @("all", "infra")) {
         $frontUrl = (tofu output -raw frontend_url 2>$null)
         $frontIp  = (tofu output -raw frontend_ip_url 2>$null)
         $backApi  = (tofu output -raw backend_api_url 2>$null)
+        $dbIp     = (tofu output -raw database_private_ip 2>$null)
         Write-Host "Frontend Web : $frontUrl ($frontIp)" -ForegroundColor Green
         Write-Host "Backend API  : $backApi" -ForegroundColor Yellow
+        Write-Host "Database VM  : $dbIp:5432 (Privada VNet)" -ForegroundColor Cyan
     } finally {
         Pop-Location
     }

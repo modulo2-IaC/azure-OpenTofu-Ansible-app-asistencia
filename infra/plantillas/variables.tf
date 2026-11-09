@@ -83,9 +83,41 @@ variable "admin_full_name" {
   default     = "Administrador General"
 }
 
-variable "database_url" {
-  description = "Cadena de conexión de PostgreSQL con sslmode=require"
+variable "database_vm_size" {
+  description = "Tamaño de la máquina virtual para el servidor de base de datos PostgreSQL"
   type        = string
+  default     = "Standard_B1s"
+}
+
+variable "db_name" {
+  description = "Nombre de la base de datos PostgreSQL para el sistema de asistencia"
+  type        = string
+  default     = "asistencia_db"
+}
+
+variable "db_username" {
+  description = "Nombre del usuario de la base de datos PostgreSQL"
+  type        = string
+  default     = "asistencia_user"
+}
+
+variable "db_password" {
+  description = "Contraseña para el usuario de base de datos (si se omite, se genera aleatoriamente)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "db_port" {
+  description = "Puerto de escucha para el motor PostgreSQL"
+  type        = number
+  default     = 5432
+}
+
+variable "database_url" {
+  description = "Cadena de conexión de PostgreSQL (si está vacía, se auto-genera con la VM de BD en Azure)"
+  type        = string
+  default     = ""
   sensitive   = true
 }
 

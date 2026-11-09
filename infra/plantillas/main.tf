@@ -15,8 +15,10 @@ locals {
 
   name_prefix        = "${var.project_name}-${var.environment}"
   rg_name            = "rg-${local.name_prefix}-${random_string.suffix.result}"
+  vm_database_name   = "vm-${local.name_prefix}-db-${random_string.suffix.result}"
   vm_backend_name    = "vm-${local.name_prefix}-back-${random_string.suffix.result}"
   vm_frontend_name   = "vm-${local.name_prefix}-front-${random_string.suffix.result}"
+  dns_database_label = "db-${local.name_prefix}-${random_string.suffix.result}"
   dns_backend_label  = "api-${local.name_prefix}-${random_string.suffix.result}"
   dns_frontend_label = "app-${local.name_prefix}-${random_string.suffix.result}"
 

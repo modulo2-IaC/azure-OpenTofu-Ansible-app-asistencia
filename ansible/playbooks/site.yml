@@ -1,7 +1,7 @@
 ---
 # =============================================================================
 # ORQUESTADOR MAESTRO DE ANSIBLE (site.yml)
-# Despliega y configura integralmente la App Asistencia
+# Despliega y configura integralmente la App Asistencia (Arquitectura 3-Tier)
 # =============================================================================
 
 - name: Validar conectividad de todos los servidores
@@ -12,8 +12,11 @@
       ansible.builtin.wait_for_connection:
         timeout: 120
 
-- name: Aprovisionar servidor Backend
+- name: Aprovisionar servidor de Base de Datos (PostgreSQL)
+  ansible.builtin.import_playbook: database.yml
+
+- name: Aprovisionar servidor Backend (NestJS + TypeORM)
   ansible.builtin.import_playbook: backend.yml
 
-- name: Aprovisionar servidor Frontend
+- name: Aprovisionar servidor Frontend (React/Vite + Nginx)
   ansible.builtin.import_playbook: frontend.yml

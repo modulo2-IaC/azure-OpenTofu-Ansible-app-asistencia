@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Lanzador de Ansible mediante contenedor Docker.
 
@@ -19,7 +19,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("syntax", "ping", "check", "deploy", "backend", "frontend", "bash", "help")]
+    [ValidateSet("syntax", "ping", "check", "deploy", "database", "backend", "frontend", "bash", "help")]
     [string]$Accion = "help",
 
     [Parameter(Position = 1)]
@@ -54,6 +54,13 @@ if (-not $imageExists) {
         Write-Error "Fallo la construccion de la imagen Docker de Ansible."
         exit 1
     }
+}
+
+# 3. Asegurar inventario disponible (crear desde ejemplo si aún no se ha ejecutado OpenTofu)
+$InventoryFile = Join-Path $AnsibleDir "inventory\hosts.ini"
+$InventoryExample = Join-Path $AnsibleDir "inventory\hosts.example.ini"
+if (-not (Test-Path $InventoryFile) -and (Test-Path $InventoryExample)) {
+    Copy-Item $InventoryExample $InventoryFile
 }
 
 # 3. Detectar ruta de llaves SSH del usuario en Windows
@@ -93,6 +100,10 @@ switch ($Accion) {
         Write-Host "`n>>> [DESPLIEGUE] Aplicando configuracion completa en Azure (site.yml)..." -ForegroundColor Yellow
         Invoke-Expression "$DockerRunBase ansible-playbook -i inventory/hosts.ini playbooks/site.yml $ExtraArgs"
     }
+    "database" {
+        Write-Host "`n>>> [DATABASE] Aprovisionando unicamente el Servidor PostgreSQL..." -ForegroundColor Yellow
+        Invoke-Expression "$DockerRunBase ansible-playbook -i inventory/hosts.ini playbooks/database.yml $ExtraArgs"
+    }
     "backend" {
         Write-Host "`n>>> [BACKEND] Aprovisionando unicamente el Backend NestJS..." -ForegroundColor Yellow
         Invoke-Expression "$DockerRunBase ansible-playbook -i inventory/hosts.ini playbooks/backend.yml $ExtraArgs"
@@ -113,6 +124,7 @@ Uso del script de pruebas de Ansible:
   .\scripts\run-ansible.ps1 ping        Prueba la conexion SSH y modulo ping hacia Azure.
   .\scripts\run-ansible.ps1 check       Modo Dry-Run: simula ejecucion sin modificar las VMs.
   .\scripts\run-ansible.ps1 deploy      Ejecuta el aprovisionamiento real de toda la infraestructura.
+  .\scripts\run-ansible.ps1 database    Aprovisiona solo el servidor de Base de Datos PostgreSQL.
   .\scripts\run-ansible.ps1 backend     Aprovisiona solo el servidor Backend.
   .\scripts\run-ansible.ps1 frontend    Aprovisiona solo el servidor Frontend.
   .\scripts\run-ansible.ps1 bash        Abre una consola Bash interactiva con Ansible listo.

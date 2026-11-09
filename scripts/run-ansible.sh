@@ -25,6 +25,10 @@ if ! docker images -q "$IMAGE_NAME" > /dev/null 2>&1; then
     docker build -t "$IMAGE_NAME" "$ANSIBLE_DIR"
 fi
 
+if [ ! -f "$ANSIBLE_DIR/inventory/hosts.ini" ] && [ -f "$ANSIBLE_DIR/inventory/hosts.example.ini" ]; then
+    cp "$ANSIBLE_DIR/inventory/hosts.example.ini" "$ANSIBLE_DIR/inventory/hosts.ini"
+fi
+
 SSH_VOLUME=""
 if [ -d "$HOME/.ssh" ]; then
     SSH_VOLUME="-v $HOME/.ssh:/root/.ssh_host:ro"
@@ -54,6 +58,10 @@ case "$ACTION" in
         echo ">>> [DESPLIEGUE] Aplicando playbooks en Azure..."
         eval "$DOCKER_BASE ansible-playbook -i inventory/hosts.ini playbooks/site.yml $EXTRA_ARGS"
         ;;
+    database)
+        echo ">>> [DATABASE] Aprovisionando Base de Datos PostgreSQL..."
+        eval "$DOCKER_BASE ansible-playbook -i inventory/hosts.ini playbooks/database.yml $EXTRA_ARGS"
+        ;;
     backend)
         echo ">>> [BACKEND] Aprovisionando Backend..."
         eval "$DOCKER_BASE ansible-playbook -i inventory/hosts.ini playbooks/backend.yml $EXTRA_ARGS"
@@ -68,7 +76,7 @@ case "$ACTION" in
         ;;
     *)
         cat << 'EOF'
-Uso: ./scripts/run-ansible.sh [syntax|ping|check|deploy|backend|frontend|bash] [argumentos-extra]
+Uso: ./scripts/run-ansible.sh [syntax|ping|check|deploy|database|backend|frontend|bash] [argumentos-extra]
 EOF
         ;;
 esac

@@ -11,8 +11,7 @@ backend_repo_url: "https://github.com/modulo2-IaC/app-asistencia-backend.git"
 backend_repo_branch: "dev"
 
 # Base de datos y autenticación
-database_url: "postgresql://neondb_owner:npg_TUB3zbo4MVrs@ep-misty-scene-b5jems8r-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-jwt_secret: "super-secure-jwt-secret-minimum-64-characters-for-nest-auth-token-system"
+# database_url y jwt_secret son inyectados dinámicamente desde inventory/hosts.ini (generado por OpenTofu)
 cors_origin: "*"
 
 # Configuración inicial de la aplicación

@@ -1,0 +1,161 @@
+---
+# =============================================================================
+# PLAYBOOK DE APROVISIONAMIENTO: BASE DE DATOS (PostgreSQL Server)
+# Servidor dedicado dentro de la VNet de Azure (Subred 10.0.3.0/24)
+# =============================================================================
+- name: Aprovisionar servidor de Base de Datos (PostgreSQL)
+  hosts: database
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # FASE 1: CONFIGURACIÓN BASE DEL SISTEMA OPERATIVO
+    # -------------------------------------------------------------------------
+    - name: Establecer zona horaria del sistema
+      community.general.timezone:
+        name: "{{ app_timezone }}"
+      ignore_errors: true
+
+    - name: Actualizar caché de repositorios apt
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Instalar paquetes esenciales del sistema
+      ansible.builtin.apt:
+        name: "{{ common_packages }}"
+        state: present
+
+    - name: Configurar git safe.directory a nivel de sistema
+      ansible.builtin.command: git config --system --add safe.directory "*"
+      changed_when: false
+
+    - name: Comprobar si ya existe archivo Swap
+      ansible.builtin.stat:
+        path: /swapfile
+      register: swapfile_stat
+
+    - name: Crear archivo Swap de 1GB si no existe
+      ansible.builtin.command: fallocate -l {{ swap_size_gb }}G /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Asignar permisos estrictos al archivo Swap (0600)
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Formatear archivo Swap
+      ansible.builtin.command: mkswap /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Activar Swap en el sistema
+      ansible.builtin.command: swapon /swapfile
+      when: not swapfile_stat.stat.exists
+      ignore_errors: true
+
+    - name: Registrar Swap en /etc/fstab para persistencia en reinicios
+      ansible.builtin.mount:
+        name: none
+        src: /swapfile
+        fstype: swap
+        opts: sw
+        state: present
+
+    # -------------------------------------------------------------------------
+    # FASE 2: INSTALACIÓN DE POSTGRESQL SERVER Y HERRAMIENTAS
+    # -------------------------------------------------------------------------
+    - name: Instalar paquetes de PostgreSQL Server y utilidades
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+        state: present
+        update_cache: yes
+
+    - name: Asegurar que el servicio PostgreSQL esté activo y habilitado
+      ansible.builtin.systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    # -------------------------------------------------------------------------
+    # FASE 3: CONFIGURACIÓN DE RED Y AUTENTICACIÓN
+    # -------------------------------------------------------------------------
+    - name: Localizar archivo de configuración postgresql.conf
+      ansible.builtin.find:
+        paths: /etc/postgresql
+        patterns: "postgresql.conf"
+        recurse: yes
+      register: pg_conf_files
+
+    - name: Configurar PostgreSQL para escuchar en todas las interfaces de red
+      ansible.builtin.lineinfile:
+        path: "{{ pg_conf_files.files[0].path }}"
+        regexp: '^#?listen_addresses\s*='
+        line: "listen_addresses = '*'"
+        state: present
+      register: pg_listen_conf
+
+    - name: Localizar archivo de control de acceso pg_hba.conf
+      ansible.builtin.find:
+        paths: /etc/postgresql
+        patterns: "pg_hba.conf"
+        recurse: yes
+      register: pg_hba_files
+
+    - name: Permitir conexiones por contraseña desde la subred del Backend en pg_hba.conf
+      ansible.builtin.lineinfile:
+        path: "{{ pg_hba_files.files[0].path }}"
+        line: "host    all             all             {{ allowed_cidr }}            scram-sha-256"
+        insertafter: '^# IPv4 local connections:'
+        state: present
+      register: pg_hba_conf
+
+    - name: Reiniciar servicio PostgreSQL para aplicar configuraciones de red
+      ansible.builtin.systemd:
+        name: postgresql
+        state: restarted
+      when: pg_listen_conf.changed or pg_hba_conf.changed
+
+    # -------------------------------------------------------------------------
+    # FASE 4: CREACIÓN DE USUARIO, BASE DE DATOS Y PRIVILEGIOS
+    # -------------------------------------------------------------------------
+    - name: Verificar si el usuario de base de datos ya existe
+      ansible.builtin.command: >
+        su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='{{ db_username }}'\""
+      register: user_check
+      changed_when: false
+
+    - name: Crear usuario de base de datos con contraseña
+      ansible.builtin.command: >
+        su - postgres -c "psql -c \"CREATE USER {{ db_username }} WITH PASSWORD '{{ db_password }}';\""
+      when: user_check.stdout != "1"
+
+    - name: Actualizar contraseña del usuario de base de datos
+      ansible.builtin.command: >
+        su - postgres -c "psql -c \"ALTER USER {{ db_username }} WITH PASSWORD '{{ db_password }}';\""
+      changed_when: false
+
+    - name: Verificar si la base de datos ya existe
+      ansible.builtin.command: >
+        su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='{{ db_name }}'\""
+      register: db_check
+      changed_when: false
+
+    - name: Crear base de datos para la aplicación
+      ansible.builtin.command: >
+        su - postgres -c "psql -c \"CREATE DATABASE {{ db_name }} OWNER {{ db_username }};\""
+      when: db_check.stdout != "1"
+
+    - name: Conceder todos los privilegios sobre la base de datos al usuario
+      ansible.builtin.command: >
+        su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE {{ db_name }} TO {{ db_username }};\""
+      changed_when: false
+
+    - name: Conceder permisos sobre el esquema public (PostgreSQL 15+)
+      ansible.builtin.command: >
+        su - postgres -c "psql -d {{ db_name }} -c \"GRANT ALL ON SCHEMA public TO {{ db_username }};\""
+      changed_when: false
