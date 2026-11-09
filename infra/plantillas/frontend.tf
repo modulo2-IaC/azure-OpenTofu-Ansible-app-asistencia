@@ -22,12 +22,20 @@ resource "azurerm_linux_virtual_machine" "frontend_vm" {
   # Tarjeta de red dedicada para Frontend
   network_interface_ids = [azurerm_network_interface.nic_frontend.id]
 
-  # Disco del Sistema Operativo optimizado para Azure Free Tier
+  # Controlador de disco NVMe requerido para la serie v7 (Standard_F1as_v7)
+  disk_controller_type = "NVMe"
+
+  # Disco del Sistema Operativo
   os_disk {
     name                 = "osdisk-${local.name_prefix}-frontend"
     caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
+    storage_account_type = "StandardSSD_LRS"
     disk_size_gb         = 30
+  }
+
+  # Garantiza liberar cuota de vCPU antes de crear la nueva instancia
+  lifecycle {
+    create_before_destroy = false
   }
 
   # Imagen oficial Canonical Ubuntu 22.04 LTS (Jammy)

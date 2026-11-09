@@ -30,7 +30,7 @@ variable "backend_vm_size" {
 variable "frontend_vm_size" {
   description = "Tamaño de la máquina virtual del Frontend"
   type        = string
-  default     = "Standard_B1s"
+  default     = "Standard_F1as_v7"
 }
 
 variable "admin_username" {
@@ -86,7 +86,7 @@ variable "admin_full_name" {
 variable "database_vm_size" {
   description = "Tamaño de la máquina virtual para el servidor de base de datos PostgreSQL"
   type        = string
-  default     = "Standard_B2s_v2"
+  default     = "Standard_F1as_v7"
 }
 
 variable "db_name" {

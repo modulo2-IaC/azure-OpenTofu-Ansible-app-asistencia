@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Script unificado de despliegue: OpenTofu + Ansible (Microsoft Azure).
 

@@ -1,7 +1,4 @@
 ---
 # Variables de configuración para Servidor de Base de Datos PostgreSQL
-db_name: "asistencia_db"
-db_username: "asistencia_user"
-db_password: "asistencia_password_secure"
+# db_name, db_username, db_password y allowed_cidr se inyectan dinámicamente desde inventory/hosts.ini (OpenTofu)
 db_port: 5432
-allowed_cidr: "10.0.1.0/24"

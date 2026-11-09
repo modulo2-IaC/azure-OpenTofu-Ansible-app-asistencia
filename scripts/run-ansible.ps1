@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Lanzador de Ansible mediante contenedor Docker.
 

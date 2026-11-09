@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Script de destrucción controlada (teardown) de infraestructura en Azure.
 

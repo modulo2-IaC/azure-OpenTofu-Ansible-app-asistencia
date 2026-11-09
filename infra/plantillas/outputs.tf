@@ -28,7 +28,7 @@ output "backend_api_url" {
 
 output "swagger_docs_url" {
   description = "URL interactiva de la documentación Swagger OpenAPI"
-  value       = "http://${azurerm_public_ip.pip_backend.fqdn}:3000/api/docs"
+  value       = "http://${azurerm_public_ip.pip_backend.fqdn}:3000/api/v1/docs"
 }
 
 output "ssh_command_backend" {
