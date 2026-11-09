@@ -155,7 +155,7 @@ Si prefieres ejecutar cada fase de manera independiente:
 .\scripts\run-ansible.ps1 backend
 .\scripts\run-ansible.ps1 frontend
 
-# 6. Abrir terminal interactiva dentro del contenedor
+# 6. Abrir terminal interactiva dentro del contenedor (ver sección detallada abajo)
 .\scripts\run-ansible.ps1 bash
 ```
 
@@ -170,6 +170,96 @@ Vuelve a ejecutar el comando de despliegue:
 .\scripts\run-ansible.ps1 deploy
 ```
 *Si la configuración es idempotente, todas las tareas reportarán estado `ok` con `changed=0`.*
+
+---
+
+## 💻 Ejecución de Comandos Ansible en la Terminal de Docker
+
+Dado que Ansible no corre de forma nativa en el host Windows, se encuentra instalado y configurado dentro del contenedor Docker (`asistencia-ansible:latest`). Puedes abrir una **terminal interactiva `bash`** dentro de dicho contenedor para ejecutar comandos nativos de Ansible en tiempo real contra las máquinas virtuales de Azure.
+
+### 1. Iniciar la Sesión Interactiva
+
+Desde la raíz de `hardware/`:
+
+**PowerShell:**
+```powershell
+.\scripts\run-ansible.ps1 bash
+```
+
+**Git Bash / Linux:**
+```bash
+./scripts/run-ansible.sh bash
+```
+
+> [!NOTE]
+> Al iniciar la sesión, el script monta automáticamente el directorio `hardware/ansible/` en `/ansible` y tu carpeta `~/.ssh` con permisos Unix corregidos (`chmod 600`), dejándote en el prompt de Linux:
+> ```bash
+> root@<container-id>:/ansible#
+> ```
+
+---
+
+### 2. Comandos que puedes ejecutar dentro del Contenedor
+
+Una vez dentro de la terminal interactiva, puedes ejecutar cualquier comando oficial de Ansible:
+
+#### A. Diagnóstico de Inventario y Conectividad
+```bash
+# Visualizar la jerarquía de grupos y servidores
+ansible-inventory -i inventory/hosts.ini --graph
+
+# Comprobar conectividad SSH y módulo Python en todas las VMs
+ansible all -i inventory/hosts.ini -m ping
+
+# Comprobar conectividad únicamente al grupo backend
+ansible backend -i inventory/hosts.ini -m ping
+```
+
+#### B. Comandos Ad-Hoc en las VMs de Azure (sin tocar los playbooks)
+```bash
+# Consultar el estado del servicio NestJS en la VM Backend
+ansible backend -i inventory/hosts.ini -m command -a "systemctl status asistencia-backend"
+
+# Consultar el estado del servidor Nginx en la VM Frontend
+ansible frontend -i inventory/hosts.ini -m command -a "systemctl status nginx"
+
+# Validar la sintaxis de configuración de Nginx en vivo
+ansible frontend -i inventory/hosts.ini -m command -a "nginx -t"
+
+# Consultar consumo de memoria RAM y Swap en todas las máquinas
+ansible all -i inventory/hosts.ini -m command -a "free -h"
+
+# Verificar espacio en disco de las VMs
+ansible all -i inventory/hosts.ini -m command -a "df -h /"
+
+# Ver el tiempo de actividad (uptime) y carga del sistema
+ansible all -i inventory/hosts.ini -m command -a "uptime"
+```
+
+#### C. Ejecución de Playbooks con Opciones Avanzadas
+```bash
+# Despliegue completo maestro (Backend + Frontend)
+ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+
+# Despliegue con modo verboso / depuración detallada (logs de fallos)
+ansible-playbook -i inventory/hosts.ini playbooks/backend.yml -vvv
+
+# Ejecución interactiva paso a paso (pide confirmación antes de cada tarea)
+ansible-playbook -i inventory/hosts.ini playbooks/site.yml --step
+
+# Modo Dry-Run (simulación sin aplicar cambios reales)
+ansible-playbook -i inventory/hosts.ini playbooks/site.yml --check --diff
+```
+
+---
+
+### 3. Salir del Contenedor
+
+Para finalizar la sesión interactiva:
+```bash
+exit
+```
+*Al salir, el contenedor se destruye automáticamente (`--rm`), manteniendo tu sistema host de Windows completamente limpio.*
 
 ---
 
