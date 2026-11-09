@@ -32,3 +32,4 @@ tofu destroy -auto-approve \
     -var-file="$FRONT_FILE"
 
 echo "[OK] Infraestructura destruida exitosamente en Azure."
+

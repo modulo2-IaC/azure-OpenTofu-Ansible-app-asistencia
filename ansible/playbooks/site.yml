@@ -12,9 +12,8 @@
       ansible.builtin.wait_for_connection:
         timeout: 120
 
-- name: Importar aprovisionamiento de Backend
+- name: Aprovisionar servidor Backend
   ansible.builtin.import_playbook: backend.yml
 
-- name: Importar aprovisionamiento de Frontend
+- name: Aprovisionar servidor Frontend
   ansible.builtin.import_playbook: frontend.yml
-

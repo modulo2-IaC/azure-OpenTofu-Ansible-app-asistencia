@@ -66,16 +66,16 @@ ansible/
 │       ├── all.yml             # Variables comunes (node_version, swap_size_gb, tz)
 │       ├── backend.yml         # Variables de NestJS, TypeORM, Neon PostgreSQL y JWT
 │       └── frontend.yml        # Variables de Vite, Reverse Proxy y Nginx
-├── playbooks/
-│   ├── site.yml                # Orquestador principal (ejecuta backend + frontend)
-│   ├── backend.yml             # Playbook dedicado al backend
-│   ├── frontend.yml            # Playbook dedicado al frontend
-│   └── ping.yml                # Playbook rápido de diagnóstico de red y SSH
-└── roles/
-    ├── common/                 # Configuración de Swap, paquetes base y timezone
-    ├── nodejs/                 # Repositorio oficial NodeSource e instalación de Node.js
-    ├── backend/                # Usuario asistenciaapp, clone, build, migraciones, systemd
-    └── frontend/               # Nginx, clone, build Vite, virtualhost reverse proxy
+└── playbooks/
+    ├── site.yml                # Orquestador principal (ejecuta backend + frontend)
+    ├── backend.yml             # Playbook autónomo para el Backend (Swap, Node.js, NestJS, Systemd)
+    ├── frontend.yml            # Playbook autónomo para el Frontend (Swap, Node.js, Nginx, Vite)
+    ├── ping.yml                # Playbook rápido de diagnóstico de red y SSH
+    └── templates/              # Plantillas Jinja2 consolidadas
+        ├── asistencia-backend.env.j2
+        ├── asistencia-backend.service.j2
+        ├── asistencia-frontend.env.j2
+        └── nginx-asistencia.conf.j2
 ```
 
 ---

@@ -79,16 +79,16 @@ hardware/
     │   ├── hosts.ini                    # Generado dinámicamente por OpenTofu (ignorado en Git)
     │   ├── hosts.example.ini            # Plantilla de referencia
     │   └── group_vars/                  # Variables agrupadas (all, backend, frontend)
-    ├── playbooks/                       # Playbooks de orquestación
-    │   ├── site.yml                     # Playbook maestro (Backend + Frontend)
-    │   ├── backend.yml                  # Playbook específico para NestJS
-    │   ├── frontend.yml                 # Playbook específico para Vite/Nginx
-    │   └── ping.yml                     # Playbook de prueba de conectividad
-    └── roles/                           # Roles modulares reutilizables
-        ├── common/                      # Swap, paquetes base y timezone
-        ├── nodejs/                      # NodeSource y Node.js LTS
-        ├── backend/                     # Despliegue de NestJS, TypeORM y Systemd
-        └── frontend/                    # Despliegue de Vite y VirtualHost de Nginx
+    └── playbooks/                       # Playbooks de aprovisionamiento y despliegue
+        ├── site.yml                     # Playbook maestro (Backend + Frontend)
+        ├── backend.yml                  # Playbook autónomo para el Backend (Swap, Node.js, NestJS, Systemd)
+        ├── frontend.yml                 # Playbook autónomo para el Frontend (Swap, Node.js, Nginx, Vite)
+        ├── ping.yml                     # Playbook de prueba de conectividad
+        └── templates/                   # Plantillas Jinja2 consolidadas
+            ├── asistencia-backend.env.j2
+            ├── asistencia-backend.service.j2
+            ├── asistencia-frontend.env.j2
+            └── nginx-asistencia.conf.j2
 ```
 
 ---
@@ -96,7 +96,7 @@ hardware/
 ## ⚙️ Arquitectura Desacoplada: OpenTofu + Ansible
 
 1. **OpenTofu (`infra/`)**: Aprovisiona la infraestructura base en Azure (VNet, Subredes, IPs públicas, NSGs, NICs y Máquinas Virtuales Ubuntu puras). Utiliza autenticación exclusiva por par de claves SSH (`asistencia_vm`) y exporta dinámicamente las IPs públicas hacia [`ansible/inventory/hosts.ini`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu-Ansible/hardware/ansible/inventory/hosts.ini).
-2. **Ansible (`ansible/`)**: Toma el control del sistema operativo mediante roles modulares (`common`, `nodejs`, `backend`, `frontend`) para configurar memoria Swap, instalar Node.js 20 LTS, clonar repositorios, inyectar variables de entorno protegidas (`0600`), compilar proyectos, ejecutar migraciones y levantar servicios con Systemd y Nginx.
+2. **Ansible (`ansible/`)**: Toma el control del sistema operativo mediante playbooks autónomos e integrados (`backend.yml` y `frontend.yml`) para configurar memoria Swap, instalar Node.js 20 LTS, clonar repositorios, inyectar variables de entorno protegidas (`0600`), compilar proyectos, ejecutar migraciones y levantar servicios con Systemd y Nginx.
 
 ---
 

@@ -1,10 +1,196 @@
 ---
+# =============================================================================
+# PLAYBOOK DE APROVISIONAMIENTO Y DESPLIEGUE: FRONTEND (React/Vite + Nginx)
+# =============================================================================
 - name: Aprovisionar servidor Frontend (React/Vite + Nginx Reverse Proxy)
   hosts: frontend
   become: yes
   gather_facts: yes
-  roles:
-    - role: common
-    - role: nodejs
-    - role: frontend
 
+  tasks:
+    # -------------------------------------------------------------------------
+    # FASE 1: CONFIGURACIÓN BASE DEL SISTEMA OPERATIVO
+    # -------------------------------------------------------------------------
+    - name: Establecer zona horaria del sistema
+      community.general.timezone:
+        name: "{{ app_timezone }}"
+      ignore_errors: true
+
+    - name: Actualizar caché de repositorios apt
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Instalar paquetes esenciales del sistema
+      ansible.builtin.apt:
+        name: "{{ common_packages }}"
+        state: present
+
+    - name: Configurar git safe.directory a nivel de sistema para prevenir errores de dubious ownership
+      ansible.builtin.command: git config --system --add safe.directory "*"
+      changed_when: false
+
+    - name: Comprobar si ya existe archivo Swap
+      ansible.builtin.stat:
+        path: /swapfile
+      register: swapfile_stat
+
+    - name: Crear archivo Swap de 1GB si no existe
+      ansible.builtin.command: fallocate -l {{ swap_size_gb }}G /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Asignar permisos estrictos al archivo Swap (0600)
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Formatear archivo Swap
+      ansible.builtin.command: mkswap /swapfile
+      when: not swapfile_stat.stat.exists
+
+    - name: Activar Swap en el sistema
+      ansible.builtin.command: swapon /swapfile
+      when: not swapfile_stat.stat.exists
+      ignore_errors: true
+
+    - name: Registrar Swap en /etc/fstab para persistencia en reinicios
+      ansible.builtin.mount:
+        name: none
+        src: /swapfile
+        fstype: swap
+        opts: sw
+        state: present
+
+    # -------------------------------------------------------------------------
+    # FASE 2: INSTALACIÓN DE NODE.JS 20 LTS (NodeSource)
+    # -------------------------------------------------------------------------
+    - name: Descargar script de configuración oficial NodeSource
+      ansible.builtin.get_url:
+        url: "https://deb.nodesource.com/setup_{{ node_version }}.x"
+        dest: "/tmp/nodesource_setup.sh"
+        mode: '0755'
+
+    - name: Ejecutar script de configuración de repositorio NodeSource
+      ansible.builtin.command: bash /tmp/nodesource_setup.sh
+      args:
+        creates: "/etc/apt/sources.list.d/nodesource.list"
+
+    - name: Instalar Node.js y npm
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+        install_recommends: no
+
+    - name: Verificar versión de Node.js instalada
+      ansible.builtin.command: node -v
+      register: node_version_check
+      changed_when: false
+
+    - name: Mostrar versión activa de Node.js
+      ansible.builtin.debug:
+        msg: "Node.js instalado con éxito: {{ node_version_check.stdout }}"
+
+    # -------------------------------------------------------------------------
+    # FASE 3: DESPLIEGUE DEL FRONTEND Y NGINX
+    # -------------------------------------------------------------------------
+    - name: Instalar servidor web Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Crear directorio para la aplicación frontend
+      ansible.builtin.file:
+        path: "{{ frontend_app_dir }}"
+        state: directory
+        owner: "{{ web_user }}"
+        group: "{{ web_group }}"
+        mode: '0755'
+
+    - name: Clonar código fuente del repositorio Frontend
+      ansible.builtin.git:
+        repo: "{{ frontend_repo_url }}"
+        version: "{{ frontend_repo_branch }}"
+        dest: "{{ frontend_app_dir }}"
+        force: yes
+      register: git_clone_frontend
+
+    - name: Generar archivo de variables de entorno para Frontend
+      ansible.builtin.template:
+        src: templates/asistencia-frontend.env.j2
+        dest: "{{ frontend_env_file }}"
+        owner: root
+        group: "{{ web_group }}"
+        mode: '0640'
+
+    - name: Sincronizar archivo .env en directorio frontend
+      ansible.builtin.copy:
+        src: "{{ frontend_env_file }}"
+        dest: "{{ frontend_app_dir }}/.env"
+        remote_src: yes
+        owner: "{{ web_user }}"
+        group: "{{ web_group }}"
+        mode: '0600'
+
+    - name: Comprobar si node_modules existe en el frontend
+      ansible.builtin.stat:
+        path: "{{ frontend_app_dir }}/node_modules"
+      register: frontend_node_modules
+
+    - name: Instalar dependencias npm del Frontend
+      ansible.builtin.command: npm install
+      args:
+        chdir: "{{ frontend_app_dir }}"
+      when: (git_clone_frontend.changed or not frontend_node_modules.stat.exists) and not ansible_check_mode
+
+    - name: Comprobar si dist compilado existe en el frontend
+      ansible.builtin.stat:
+        path: "{{ frontend_app_dir }}/dist/index.html"
+      register: frontend_dist
+
+    - name: Compilar aplicación web estática con Vite (npm run build)
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ frontend_app_dir }}"
+      when: (git_clone_frontend.changed or not frontend_dist.stat.exists) and not ansible_check_mode
+
+    - name: Ajustar permisos del directorio web y distribución compilada
+      ansible.builtin.file:
+        path: "{{ frontend_app_dir }}"
+        owner: "{{ web_user }}"
+        group: "{{ web_group }}"
+        recurse: yes
+
+    - name: Desplegar configuración VirtualHost Nginx
+      ansible.builtin.template:
+        src: templates/nginx-asistencia.conf.j2
+        dest: /etc/nginx/sites-available/asistencia-frontend
+        owner: root
+        group: root
+        mode: '0644'
+      register: nginx_conf
+
+    - name: Deshabilitar VirtualHost default de Nginx si existe
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Habilitar VirtualHost asistencia-frontend mediante enlace simbólico
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/asistencia-frontend
+        dest: /etc/nginx/sites-enabled/asistencia-frontend
+        state: link
+
+    - name: Validar configuración de sintaxis Nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Reiniciar y asegurar inicio automático de Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        enabled: yes
+        state: restarted
+      when: not ansible_check_mode

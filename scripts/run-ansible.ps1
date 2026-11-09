@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Lanzador de Ansible mediante contenedor Docker.
 
@@ -119,3 +119,4 @@ Uso del script de pruebas de Ansible:
 "@ -ForegroundColor Gray
     }
 }
+

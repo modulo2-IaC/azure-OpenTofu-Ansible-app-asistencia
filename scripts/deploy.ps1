@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Script unificado de despliegue: OpenTofu + Ansible (Microsoft Azure).
 
@@ -175,3 +175,4 @@ if ($Target -in @("all", "ansible")) {
     Write-Host "  ¡Despliegue Integral Completado con Éxito!" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
 }
+
