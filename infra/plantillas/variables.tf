@@ -40,9 +40,28 @@ variable "admin_username" {
 }
 
 variable "admin_password" {
-  description = "Contraseña para el usuario administrador de las máquinas virtuales"
+  description = "Contraseña para el usuario administrador (opcional, autenticación por clave SSH es obligatoria)"
   type        = string
+  default     = ""
   sensitive   = true
+}
+
+variable "ssh_public_key" {
+  description = "Contenido de la clave pública SSH para autenticación en las VMs"
+  type        = string
+  default     = ""
+}
+
+variable "ssh_public_key_path" {
+  description = "Ruta al archivo de la clave pública SSH"
+  type        = string
+  default     = "~/.ssh/asistencia_vm.pub"
+}
+
+variable "ssh_private_key_path" {
+  description = "Ruta al archivo de la clave privada SSH para conexión con Ansible"
+  type        = string
+  default     = "~/.ssh/asistencia_vm"
 }
 
 variable "admin_registration_no" {
@@ -90,7 +109,7 @@ variable "app_timezone" {
 }
 
 variable "run_migrations" {
-  description = "Bandera booleana para ejecutar migraciones de base de datos en cloud-init"
+  description = "Bandera booleana para ejecutar migraciones de base de datos"
   type        = bool
   default     = true
 }

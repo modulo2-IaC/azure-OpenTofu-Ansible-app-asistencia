@@ -6,8 +6,9 @@ project_name = "asistencia"
 environment  = "dev"
 location     = "swedencentral"
 
-admin_username = "azureuser"
-admin_password = "TuPasswordSeguro123!"
+admin_username       = "azureuser"
+ssh_public_key_path  = "~/.ssh/asistencia_vm.pub"
+ssh_private_key_path = "~/.ssh/asistencia_vm"
 
 alert_email = "admin@empresa.com"
 

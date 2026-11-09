@@ -1,0 +1,15 @@
+[Unit]
+Description=Asistencia Backend NestJS
+After=network.target
+
+[Service]
+WorkingDirectory={{ backend_app_dir }}
+EnvironmentFile={{ backend_env_file }}
+ExecStart=/usr/bin/node dist/main.js
+Restart=always
+RestartSec=5
+User={{ app_user }}
+
+[Install]
+WantedBy=multi-user.target
+

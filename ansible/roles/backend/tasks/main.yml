@@ -1,0 +1,124 @@
+---
+- name: Crear grupo del sistema para el backend
+  ansible.builtin.group:
+    name: "{{ app_group }}"
+    state: present
+    system: yes
+
+- name: Crear usuario del sistema para el backend sin shell de login
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    group: "{{ app_group }}"
+    system: yes
+    create_home: no
+    shell: /usr/sbin/nologin
+    state: present
+
+- name: Crear directorio de la aplicación
+  ansible.builtin.file:
+    path: "{{ backend_app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+
+- name: Clonar código fuente del repositorio Backend
+  ansible.builtin.git:
+    repo: "{{ backend_repo_url }}"
+    version: "{{ backend_repo_branch }}"
+    dest: "{{ backend_app_dir }}"
+    force: yes
+  register: git_clone_backend
+
+- name: Generar archivo de variables de entorno en /etc
+  ansible.builtin.template:
+    src: asistencia-backend.env.j2
+    dest: "{{ backend_env_file }}"
+    owner: root
+    group: "{{ app_group }}"
+    mode: '0640'
+
+- name: Sincronizar archivo .env dentro del directorio de la aplicación
+  ansible.builtin.copy:
+    src: "{{ backend_env_file }}"
+    dest: "{{ backend_app_dir }}/.env"
+    remote_src: yes
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+
+- name: Comprobar si node_modules existe en el backend
+  ansible.builtin.stat:
+    path: "{{ backend_app_dir }}/node_modules"
+  register: backend_node_modules
+
+- name: Instalar dependencias de producción y compilación de Node.js
+  ansible.builtin.command: npm install
+  args:
+    chdir: "{{ backend_app_dir }}"
+  environment:
+    NODE_ENV: development
+  when: (git_clone_backend.changed or not backend_node_modules.stat.exists) and not ansible_check_mode
+
+- name: Comprobar si dist compilado existe en el backend
+  ansible.builtin.stat:
+    path: "{{ backend_app_dir }}/dist/main.js"
+  register: backend_dist
+
+- name: Compilar proyecto NestJS (TypeScript a JavaScript dist)
+  ansible.builtin.command: npm run build
+  args:
+    chdir: "{{ backend_app_dir }}"
+  when: (git_clone_backend.changed or not backend_dist.stat.exists) and not ansible_check_mode
+
+- name: Ejecutar migraciones de base de datos TypeORM
+  ansible.builtin.shell: |
+    set -a
+    . {{ backend_env_file }}
+    set +a
+    npm run migration:run
+  args:
+    chdir: "{{ backend_app_dir }}"
+  when: run_migrations and not ansible_check_mode
+  register: migration_result
+  failed_when: false
+
+- name: Sembrar datos iniciales (Admin y Estudiante)
+  ansible.builtin.shell: |
+    set -a
+    . {{ backend_env_file }}
+    set +a
+    npm run seed:admin && npm run seed:student
+  args:
+    chdir: "{{ backend_app_dir }}"
+  when: run_migrations and not ansible_check_mode
+  ignore_errors: true
+
+- name: Ajustar permisos de propiedad al usuario de servicio
+  ansible.builtin.file:
+    path: "{{ backend_app_dir }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    recurse: yes
+
+- name: Desplegar unidad de servicio Systemd
+  ansible.builtin.template:
+    src: asistencia-backend.service.j2
+    dest: "/etc/systemd/system/{{ service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  register: systemd_service
+
+- name: Recargar demonio Systemd si cambió la unidad
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  when: systemd_service.changed
+
+- name: Habilitar e iniciar servicio Asistencia Backend
+  ansible.builtin.systemd:
+    name: "{{ service_name }}"
+    enabled: yes
+    state: restarted
+  when: not ansible_check_mode
+

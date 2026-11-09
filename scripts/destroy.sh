@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# SCRIPT DE AUTOMATIZACIÓN (BASH): DESTRUCCIÓN / TEARDOWN DE INFRAESTRUCTURA
-# Sistema de Asistencia - Microsoft Azure con OpenTofu
+# Script de destrucción controlada (teardown) de infraestructura en Azure
+# Compatible con Git Bash, Linux y macOS
 # =============================================================================
-
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-TEMPLATE_DIR="$ROOT_DIR/plantillas"
-PARAM_DIR="$ROOT_DIR/parametros"
+HARDWARE_DIR="$(dirname "$SCRIPT_DIR")"
+INFRA_DIR="$HARDWARE_DIR/infra"
+TEMPLATE_DIR="$INFRA_DIR/plantillas"
+PARAM_DIR="$INFRA_DIR/parametros"
 
 echo "============================================================"
 echo "  Destrucción Controlada de Infraestructura en Azure"

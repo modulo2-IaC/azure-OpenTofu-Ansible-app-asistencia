@@ -1,22 +1,31 @@
-# Sistema de Asistencia — OpenTofu (Microsoft Azure)
+# Sistema de Asistencia — OpenTofu + Ansible (Microsoft Azure)
 
-Infraestructura como Código (IaC) en **Microsoft Azure** diseñada bajo principios de **Alta Cohesión y Bajo Acoplamiento** para desplegar el **Backend NestJS** y **Frontend React/Vite/Nginx** en máquinas virtuales Linux Ubuntu optimizadas para la capa gratuita (Azure Free Trial, región `swedencentral`).
+Infraestructura como Código (IaC) y Gestión de Configuración en **Microsoft Azure** diseñada bajo principios de **Alta Cohesión y Bajo Acoplamiento** para desplegar el **Backend NestJS** y **Frontend React/Vite/Nginx** en máquinas virtuales Linux Ubuntu optimizadas para la capa gratuita (Azure Free Trial, región `swedencentral`).
 
-El aprovisionamiento del software se realiza en el primer arranque mediante **Cloud-Init declarativo** con inyección de archivos en Base64 (`write_files`), variables de entorno protegidas (`0600`) y servicios nativos de **Systemd**.
+- **OpenTofu**: Aprovisiona la infraestructura cloud base (VNet, Subredes, IPs públicas, NSGs, NICs y Máquinas Virtuales) y exporta dinámicamente las IPs al inventario de Ansible.
+- **Ansible**: Gestiona la configuración del sistema operativo, memoria swap, dependencias (Node.js 20, Nginx), clonación de código, compilación, variables de entorno protegidas (`0600`), migraciones TypeORM, semillas y servicios nativos de **Systemd**.
 
 ---
 
 ## 📁 Estructura del Repositorio
 
-El proyecto se organiza en dos subproyectos desacoplados:
+El proyecto se organiza en tres subsistemas desacoplados:
 
 1. **`bootstrap/`**: Inicialización del Storage Account y Blob Container en Azure para persistir el estado remoto (`.tfstate`).
-2. **`infra/`**: Proyecto integral de aprovisionamiento de la **App Asistencia** (Backend + Frontend), con estructura inspirada en `recursos-app-asistencia`.
+2. **`infra/`**: Aprovisionamiento de infraestructura cloud con **OpenTofu**.
+3. **`ansible/`**: Gestión de configuración, despliegue de software y orquestación con **Ansible** (incluye soporte para Docker en Windows).
 
 ```text
 hardware/
 ├── README.md                            # Documentación general del repositorio
-├── IaC.md                               # Guía de los 11 Principios DevSecOps (incluye Cloud-Init declarativo y Systemd)
+├── IaC.md                               # Guía de los 11 Principios DevSecOps
+├── scripts/                             # Scripts ejecutables centralizados de automatización
+│   ├── deploy.ps1                       # Despliegue unificado (OpenTofu + Ansible) en PowerShell
+│   ├── deploy.sh                        # Despliegue unificado en Bash / Git Bash
+│   ├── run-ansible.ps1                  # Lanzador de Ansible vía Docker en PowerShell
+│   ├── run-ansible.sh                   # Lanzador de Ansible vía Docker en Bash
+│   ├── destroy.ps1                      # Destrucción de infraestructura en PowerShell
+│   └── destroy.sh                       # Destrucción de infraestructura en Bash
 ├── .gitignore                           # Exclusiones de Git
 ├── .tflint.hcl                          # Configuración de linter estático con ruleset AzureRM
 ├── .gitleaks.toml                       # Reglas de detección y prevención de secretos
@@ -41,11 +50,10 @@ hardware/
     │   ├── main.tf                      # Orquestador raíz (Resource Group, tags y sufijo)
     │   ├── red.tf                       # VNet (10.0.0.0/16), Subredes, IPs públicas y NICs
     │   ├── seguridad.tf                 # Firewalls perimetrales (NSGs) y JWT Secret
-    │   ├── backend.tf                   # VM Backend (NestJS + Systemd, Cloud-Init declarativo write_files)
-    │   ├── frontend.tf                  # VM Frontend (React/Vite + Nginx + Systemd, Cloud-Init write_files)
+    │   ├── backend.tf                   # VM Backend (NestJS + Systemd, autenticación SSH)
+    │   ├── frontend.tf                  # VM Frontend (React/Vite + Nginx + Systemd, autenticación SSH)
     │   ├── monitoreo.tf                 # Log Analytics Workspace, Action Group y alertas CPU
-    │   ├── cloud-init-backend.yaml      # Cloud-Init conciso: write_files (package.json b64, .env 0600, service) + runcmd
-    │   ├── cloud-init-frontend.yaml     # Cloud-Init conciso: write_files (package.json b64, index.html b64, Nginx) + runcmd
+    │   ├── ansible_inventory.tf         # Generador dinámico de inventario para Ansible
     │   ├── variables.tf                 # Definición tipada de parámetros de entrada
     │   ├── outputs.tf                   # Salidas consolidadas (URLs, FQDNs, IPs y credenciales)
     │   └── versions.tf                  # Configuración de OpenTofu y backend azurerm
@@ -54,11 +62,6 @@ hardware/
     │   ├── backend.tfvars               # Parámetros de DB Neon, JWT, CORS y repo backend
     │   ├── frontend.tfvars              # Parámetros del repositorio frontend y API URL
     │   └── *.example.tfvars             # Plantillas de ejemplo para versionado seguro
-    ├── scripts/                         # Automatización de pruebas, despliegue y destrucción
-    │   ├── deploy.ps1                   # Despliegue en Windows (PowerShell) con auto-bootstrap
-    │   ├── deploy.sh                    # Despliegue en Linux/macOS (Bash)
-    │   ├── destroy.ps1                  # Eliminación segura en Windows (PowerShell)
-    │   └── destroy.sh                   # Eliminación segura en Linux/macOS (Bash)
     ├── reportes/                        # Auditoría DevSecOps y análisis de código
     │   ├── tofu-validate.md             # Validación de sintaxis nativa de OpenTofu
     │   ├── tflint.md                    # Análisis estático de esquema AzureRM
@@ -66,90 +69,120 @@ hardware/
     │   └── README.md                    # Resumen ejecutivo de auditorías
     └── politicas/                       # Gobierno y protección de infraestructura
         └── proteccion-recursos.md       # Resource Locks y meta-argumento prevent_destroy
+└── ansible/                             # Subproyecto 3: Gestión de Configuración y Despliegue
+    ├── README.md                        # Guía de ejecución, pruebas y comandos rápidos
+    ├── Dockerfile                       # Entorno reproducible de Ansible para Windows
+    ├── docker-compose.yml               # Orquestador Docker de Ansible
+    ├── entrypoint.sh                    # Entrypoint Docker: gestiona permisos SSH (0600)
+    ├── ansible.cfg                      # Configuración de Ansible y parámetros de conexión
+    ├── inventory/                       # Inventario de servidores
+    │   ├── hosts.ini                    # Generado dinámicamente por OpenTofu (ignorado en Git)
+    │   ├── hosts.example.ini            # Plantilla de referencia
+    │   └── group_vars/                  # Variables agrupadas (all, backend, frontend)
+    ├── playbooks/                       # Playbooks de orquestación
+    │   ├── site.yml                     # Playbook maestro (Backend + Frontend)
+    │   ├── backend.yml                  # Playbook específico para NestJS
+    │   ├── frontend.yml                 # Playbook específico para Vite/Nginx
+    │   └── ping.yml                     # Playbook de prueba de conectividad
+    └── roles/                           # Roles modulares reutilizables
+        ├── common/                      # Swap, paquetes base y timezone
+        ├── nodejs/                      # NodeSource y Node.js LTS
+        ├── backend/                     # Despliegue de NestJS, TypeORM y Systemd
+        └── frontend/                    # Despliegue de Vite y VirtualHost de Nginx
 ```
 
 ---
 
-## ⚙️ Aprovisionamiento Automatizado: Cloud-Init Declarativo y Systemd
+## ⚙️ Arquitectura Desacoplada: OpenTofu + Ansible
 
-Tanto el Backend como el Frontend se aprovisionan de forma completamente automatizada en el primer arranque de las máquinas virtuales Linux, utilizando la sintaxis estándar de **Cloud-Init** (`write_files` + `runcmd`) y servicios nativos de **Systemd**.
-
-### 1. Inyección de Manifiestos con `filebase64` en OpenTofu
-En las plantillas [`backend.tf`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/backend.tf) y [`frontend.tf`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/frontend.tf), los archivos de la aplicación (`package.json`, `index.html`) se cargan y codifican en Base64 para inyectarse de forma segura en las plantillas YAML:
-
-```hcl
-locals {
-  carpeta_app_backend = "${path.module}/../../../../asistencia-backend"
-  backend_package_json = fileexists("${local.carpeta_app_backend}/package.json") ? filebase64("${local.carpeta_app_backend}/package.json") : base64encode("...")
-}
-
-resource "azurerm_linux_virtual_machine" "backend_vm" {
-  ...
-  custom_data = base64encode(templatefile("${path.module}/cloud-init-backend.yaml", {
-    package_json = local.backend_package_json
-    ambiente     = var.environment
-    ...
-  }))
-}
-```
-
-### 2. Estructura Declarativa `#cloud-config`
-Los archivos [`cloud-init-backend.yaml`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/cloud-init-backend.yaml) y [`cloud-init-frontend.yaml`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/plantillas/cloud-init-frontend.yaml) implementan una configuración corta, limpia y funcional:
-
-* **`write_files`**:
-  * **Archivos de aplicación**: decodificados automáticamente en destino (`encoding: b64`).
-  * **Variables de entorno (`.env`)**: permisos estrictos `permissions: "0600"` para proteger credenciales y secretos de base de datos.
-  * **Unidades de servicio Systemd**: `/etc/systemd/system/asistencia-backend.service` y `/etc/systemd/system/asistencia-frontend.service`.
-* **`runcmd`**:
-  * **Memoria Swap (1GB)**: previene errores *Out-Of-Memory* (OOM) durante la compilación de TypeScript y Vite en instancias con recursos ajustados.
-  * **Sincronización de código**: clona el código fuente desde la rama `dev` del repositorio oficial.
-  * **Compilación y ciclo de vida**: ejecuta `npm install`, `npm run build`, migraciones TypeORM (`migration:run`) y semillas (`seed:admin`, `seed:student`).
-  * **Usuario de servicio**: creación del usuario del sistema sin shell (`asistenciaapp`) y asignación de permisos de propiedad.
-  * **Inicio del servicio**: `systemctl daemon-reload` y `systemctl enable --now <servicio>`.
+1. **OpenTofu (`infra/`)**: Aprovisiona la infraestructura base en Azure (VNet, Subredes, IPs públicas, NSGs, NICs y Máquinas Virtuales Ubuntu puras). Utiliza autenticación exclusiva por par de claves SSH (`asistencia_vm`) y exporta dinámicamente las IPs públicas hacia [`ansible/inventory/hosts.ini`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu-Ansible/hardware/ansible/inventory/hosts.ini).
+2. **Ansible (`ansible/`)**: Toma el control del sistema operativo mediante roles modulares (`common`, `nodejs`, `backend`, `frontend`) para configurar memoria Swap, instalar Node.js 20 LTS, clonar repositorios, inyectar variables de entorno protegidas (`0600`), compilar proyectos, ejecutar migraciones y levantar servicios con Systemd y Nginx.
 
 ---
 
-## 🚀 Despliegue Rápido de la App Asistencia
+## 🚀 Ejecución desde la Raíz del Proyecto (`hardware/`)
 
-### Opción 1: Automatizado desde `infra/` (Recomendado)
-El script `scripts\deploy.ps1` detecta si el Storage Account de `bootstrap` existe en Azure; si no existe, lo crea automáticamente antes de aplicar `plantillas`:
+Todos los comandos se ejecutan directamente desde el directorio raíz:
+* **PowerShell**: `cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu-Ansible\hardware"`
+* **Git Bash**: `cd "/d/soe/modulos/DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)/apps/app4/IAC/azure/OpenTofu-Ansible/hardware"`
+
+### 1. Despliegue Completo (OpenTofu + Ansible con 1 solo comando)
+
+Aprovisiona la infraestructura en Azure y despliega todo el software automáticamente:
+
+**PowerShell:**
+```powershell
+.\scripts\deploy.ps1
+```
+
+**Git Bash / Linux:**
+```bash
+./scripts/deploy.sh
+```
+
+---
+
+### 2. Flujo Granular Paso a Paso
+
+Si prefieres ejecutar cada fase de manera independiente:
+
+#### Fase A: Aprovisionar Infraestructura Cloud (OpenTofu)
+```powershell
+# PowerShell
+.\scripts\deploy.ps1 -Target infra
+
+# Git Bash
+./scripts/deploy.sh infra
+```
+*Esto crea las VMs y actualiza automáticamente `ansible/inventory/hosts.ini`.*
+
+#### Fase B: Pruebas y Despliegue con Ansible (vía Docker)
 
 ```powershell
-cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu\hardware\infra"
+# 1. Validar sintaxis de playbooks (sin tocar servidores)
+.\scripts\run-ansible.ps1 syntax
 
-# Ejecutar despliegue completo
-powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
+# 2. Comprobar conectividad SSH con Azure
+.\scripts\run-ansible.ps1 ping
+
+# 3. Simulación Dry-Run (previsualizar cambios sin ejecutarlos)
+.\scripts\run-ansible.ps1 check
+
+# 4. Desplegar configuración y aplicaciones (Backend + Frontend)
+.\scripts\run-ansible.ps1 deploy
+
+# 5. Desplegar un solo componente
+.\scripts\run-ansible.ps1 backend
+.\scripts\run-ansible.ps1 frontend
+
+# 6. Abrir terminal interactiva dentro del contenedor
+.\scripts\run-ansible.ps1 bash
 ```
+
+*(En Git Bash, utiliza `./scripts/run-ansible.sh <accion>`, por ejemplo `./scripts/run-ansible.sh ping`)*
 
 ---
 
-### Opción 2: Despliegue Manual con OpenTofu CLI
+### 3. Validación de Idempotencia
 
+Vuelve a ejecutar el comando de despliegue:
 ```powershell
-# 1. Aprovisionar Storage Account de estado remoto (si no existe):
-cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu\hardware\bootstrap"
-tofu init
-tofu apply -auto-approve
-
-# 2. Aprovisionar la App Asistencia:
-cd "..\infra\plantillas"
-tofu init
-tofu plan `
-  -var-file="../parametros/infra.tfvars" `
-  -var-file="../parametros/backend.tfvars" `
-  -var-file="../parametros/frontend.tfvars" `
-  -out=tfplan
-
-tofu apply -auto-approve tfplan
+.\scripts\run-ansible.ps1 deploy
 ```
+*Si la configuración es idempotente, todas las tareas reportarán estado `ok` con `changed=0`.*
 
 ---
 
-## 🗑️ Destrucción Controlada (Teardown)
+## 🗑️ Destrucción Controlada de Recursos (Teardown)
 
-Para eliminar los recursos de la App Asistencia en Azure y evitar cobros:
+Para eliminar todos los recursos creados en Microsoft Azure y evitar costos:
 
+**PowerShell:**
 ```powershell
-cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu\hardware\infra"
-powershell -ExecutionPolicy Bypass -File scripts\destroy.ps1
+.\scripts\destroy.ps1
+```
+
+**Git Bash / Linux:**
+```bash
+./scripts/destroy.sh
 ```

@@ -1,0 +1,20 @@
+---
+# =============================================================================
+# ORQUESTADOR MAESTRO DE ANSIBLE (site.yml)
+# Despliega y configura integralmente la App Asistencia
+# =============================================================================
+
+- name: Validar conectividad de todos los servidores
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Esperar a que el puerto SSH esté disponible
+      ansible.builtin.wait_for_connection:
+        timeout: 120
+
+- name: Importar aprovisionamiento de Backend
+  ansible.builtin.import_playbook: backend.yml
+
+- name: Importar aprovisionamiento de Frontend
+  ansible.builtin.import_playbook: frontend.yml
+

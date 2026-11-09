@@ -1,0 +1,12 @@
+---
+- name: Probar conectividad SSH y disponibilidad de Python
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Ping a todos los nodos administrados
+      ansible.builtin.ping:
+
+    - name: Mostrar información del sistema operativo
+      ansible.builtin.debug:
+        msg: "Conectado exitosamente a {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }} - Kernel: {{ ansible_kernel }})"
+

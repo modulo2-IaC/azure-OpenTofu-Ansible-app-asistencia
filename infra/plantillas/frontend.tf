@@ -1,6 +1,6 @@
 # =============================================================================
-# MÓDULO DE CÓMPUTO: FRONTEND REACT + VITE + NGINX (frontend.tf)
-# Aprovisionamiento declarativo con Cloud-Init y Nginx
+# MÓDULO DE CÓMPUTO: FRONTEND (frontend.tf)
+# Aprovisionamiento de infraestructura base (VM Linux) para gestión con Ansible
 # =============================================================================
 
 resource "azurerm_linux_virtual_machine" "frontend_vm" {
@@ -11,9 +11,13 @@ resource "azurerm_linux_virtual_machine" "frontend_vm" {
   admin_username      = var.admin_username
   tags                = local.common_tags
 
-  # Autenticación del administrador
-  admin_password                  = var.admin_password
-  disable_password_authentication = false
+  # Autenticación exclusiva por clave SSH (deshabilita contraseñas)
+  disable_password_authentication = true
+
+  admin_ssh_key {
+    username   = var.admin_username
+    public_key = local.ssh_public_key
+  }
 
   # Tarjeta de red dedicada para Frontend
   network_interface_ids = [azurerm_network_interface.nic_frontend.id]
@@ -33,19 +37,6 @@ resource "azurerm_linux_virtual_machine" "frontend_vm" {
     sku       = "22_04-lts-gen2"
     version   = "latest"
   }
-
-  # Aprovisionamiento automatizado de inicio con Cloud-Init (write_files + systemd)
-  custom_data = base64encode(templatefile("${path.module}/cloud-init-frontend.yaml", {
-    backend_port   = var.backend_port
-    git_branch     = var.frontend_repo_branch
-    ambiente       = var.environment
-    admin_username = var.admin_username
-    node_version   = var.node_version
-    backend_host   = azurerm_public_ip.pip_backend.ip_address
-    vite_api_url   = var.vite_api_url
-    repo_url       = var.frontend_repo_url
-    repo_branch    = var.frontend_repo_branch
-  }))
 
   # Garantiza que el backend y su IP pública se creen previamente
   depends_on = [azurerm_linux_virtual_machine.backend_vm]

@@ -40,6 +40,10 @@ backend.conf
 *.pub
 id_rsa*
 
+# Artefactos e inventario dinámico de Ansible
+ansible/inventory/hosts.ini
+*.retry
+
 # Archivos del Sistema Operativo
 .DS_Store
 Thumbs.db

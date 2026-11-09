@@ -1,0 +1,16 @@
+services:
+  ansible:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asistencia-ansible:latest
+    container_name: asistencia-ansible-runner
+    volumes:
+      - .:/ansible
+      - ${USERPROFILE:-~}/.ssh:/root/.ssh_host:ro
+    environment:
+      - ANSIBLE_HOST_KEY_CHECKING=False
+      - ANSIBLE_CONFIG=/ansible/ansible.cfg
+    working_dir: /ansible
+    entrypoint: ["/entrypoint.sh", "ansible-playbook"]
+    command: ["--version"]

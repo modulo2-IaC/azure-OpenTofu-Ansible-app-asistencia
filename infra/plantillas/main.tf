@@ -19,6 +19,13 @@ locals {
   vm_frontend_name   = "vm-${local.name_prefix}-front-${random_string.suffix.result}"
   dns_backend_label  = "api-${local.name_prefix}-${random_string.suffix.result}"
   dns_frontend_label = "app-${local.name_prefix}-${random_string.suffix.result}"
+
+  # Clave pública SSH: se prioriza var.ssh_public_key o la lectura desde var.ssh_public_key_path
+  ssh_public_key = var.ssh_public_key != "" ? var.ssh_public_key : (
+    fileexists(pathexpand(var.ssh_public_key_path)) ? file(pathexpand(var.ssh_public_key_path)) : (
+      fileexists(pathexpand("~/.ssh/id_rsa.pub")) ? file(pathexpand("~/.ssh/id_rsa.pub")) : ""
+    )
+  )
 }
 
 # 1. Sufijo aleatorio para garantizar unicidad global en FQDNs y recursos de Azure

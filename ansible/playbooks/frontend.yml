@@ -1,0 +1,10 @@
+---
+- name: Aprovisionar servidor Frontend (React/Vite + Nginx Reverse Proxy)
+  hosts: frontend
+  become: yes
+  gather_facts: yes
+  roles:
+    - role: common
+    - role: nodejs
+    - role: frontend
+

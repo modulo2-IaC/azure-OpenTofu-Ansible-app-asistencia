@@ -1,0 +1,18 @@
+---
+# Variables de aprovisionamiento para Frontend React/Vite + Nginx
+frontend_app_dir: "/var/www/app"
+frontend_env_file: "/etc/asistencia-frontend.env"
+
+# Repositorio Git
+frontend_repo_url: "https://github.com/modulo2-IaC/app-asistencia-frontend.git"
+frontend_repo_branch: "dev"
+
+# API Backend y Reverse Proxy
+vite_api_url: "/api/v1/"
+backend_host: "{{ hostvars['vm-backend']['ansible_host'] | default('127.0.0.1') }}"
+backend_port: 3000
+
+# Permisos de servidor web
+web_user: "www-data"
+web_group: "www-data"
+

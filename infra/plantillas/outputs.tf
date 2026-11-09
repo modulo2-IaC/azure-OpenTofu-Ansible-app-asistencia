@@ -33,7 +33,7 @@ output "swagger_docs_url" {
 
 output "ssh_command_backend" {
   description = "Comando SSH para conectarse a la máquina virtual del Backend"
-  value       = "ssh ${var.admin_username}@${azurerm_public_ip.pip_backend.ip_address}"
+  value       = "ssh -i ${var.ssh_private_key_path} ${var.admin_username}@${azurerm_public_ip.pip_backend.ip_address}"
 }
 
 # -----------------------------------------------------------------------------
@@ -61,7 +61,7 @@ output "frontend_ip_url" {
 
 output "ssh_command_frontend" {
   description = "Comando SSH para conectarse a la máquina virtual del Frontend"
-  value       = "ssh ${var.admin_username}@${azurerm_public_ip.pip_frontend.ip_address}"
+  value       = "ssh -i ${var.ssh_private_key_path} ${var.admin_username}@${azurerm_public_ip.pip_frontend.ip_address}"
 }
 
 # -----------------------------------------------------------------------------
@@ -81,6 +81,6 @@ output "credentials_summary" {
       password  = "12345600"
       rol       = "Estudiante"
     }
-    note = "Para verificar el progreso del aprovisionamiento: tail -f /var/log/cloud-init-output.log"
+    note = "Infraestructura cloud lista. Ejecuta Ansible desde hardware/ansible (.//run-ansible.ps1 deploy) para configurar el software."
   }
 }

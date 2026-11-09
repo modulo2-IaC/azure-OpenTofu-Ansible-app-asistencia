@@ -1,7 +1,15 @@
-# =============================================================================
-# SCRIPT DE AUTOMATIZACIÓN: DESTRUCCIÓN / TEARDOWN DE INFRAESTRUCTURA
-# Sistema de Asistencia - Microsoft Azure con OpenTofu
-# =============================================================================
+﻿<#
+.SYNOPSIS
+    Script de destrucción controlada (teardown) de infraestructura en Azure.
+
+.DESCRIPTION
+    Elimina de forma segura y completa todos los recursos aprovisionados
+    en Microsoft Azure mediante OpenTofu.
+
+.EXAMPLE
+    .\scripts\destroy.ps1
+    .\scripts\destroy.ps1 -Force
+#>
 
 [CmdletBinding()]
 param(
@@ -10,10 +18,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RootDir     = Split-Path -Parent $ScriptDir
-$TemplateDir = Join-Path $RootDir "plantillas"
-$ParamDir    = Join-Path $RootDir "parametros"
+$ScriptDir    = $PSScriptRoot
+$HardwareDir  = Split-Path -Parent $ScriptDir
+$InfraDir     = Join-Path $HardwareDir "infra"
+$TemplateDir  = Join-Path $InfraDir "plantillas"
+$ParamDir     = Join-Path $InfraDir "parametros"
 
 Write-Host "`n============================================================" -ForegroundColor Red
 Write-Host "  Destrucción Controlada de Infraestructura en Azure" -ForegroundColor Red
@@ -49,10 +58,9 @@ try {
         -var-file="$infraFile" `
         -var-file="$backendFile" `
         -var-file="$frontFile"
-    Write-Host "`n  [OK] Infraestructura destruida exitosamente en Azure para evitar costos." -ForegroundColor Green
-} catch {
-    Write-Host "  [ERROR] Ocurrió un error al ejecutar tofu destroy." -ForegroundColor Red
-    exit 1
+
+    if ($LASTEXITCODE -ne 0) { throw "tofu destroy falló con código $LASTEXITCODE" }
+    Write-Host "`n[OK] Infraestructura destruida exitosamente en Microsoft Azure." -ForegroundColor Green
 } finally {
     Pop-Location
 }

@@ -1,0 +1,16 @@
+---
+# Variables globales para todas las máquinas virtuales
+node_version: "20"
+swap_size_gb: 1
+app_timezone: "America/La_Paz"
+
+# Paquetes base requeridos
+common_packages:
+  - git
+  - curl
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - htop
+  - net-tools
+

@@ -17,11 +17,10 @@ infra/
 │   ├── main.tf                          # Orquestador raíz (Resource Group, tags globales y sufijo aleatorio)
 │   ├── red.tf                           # Red Virtual (10.0.0.0/16), subredes backend/frontend, IPs públicas y NICs
 │   ├── seguridad.tf                     # Firewalls perimetrales (NSGs), asociaciones y JWT Secret
-│   ├── backend.tf                       # Máquina Virtual Backend Linux (NestJS + PM2)
-│   ├── frontend.tf                      # Máquina Virtual Frontend Linux (React/Vite + Nginx)
+│   ├── backend.tf                       # Máquina Virtual Backend Linux (NestJS + Systemd, autenticación SSH)
+│   ├── frontend.tf                      # Máquina Virtual Frontend Linux (React/Vite + Nginx, autenticación SSH)
 │   ├── monitoreo.tf                     # Log Analytics Workspace, Action Group y alertas métricas de CPU
-│   ├── cloud-init-backend.yaml          # Script de arranque Backend (rama dev, build, migraciones Neon y seeds)
-│   ├── cloud-init-frontend.yaml         # Script de arranque Frontend (rama dev, Reverse Proxy y build Vite)
+│   ├── ansible_inventory.tf             # Generador dinámico de inventario para Ansible
 │   ├── variables.tf                     # Definición tipada de parámetros de entrada
 │   ├── outputs.tf                       # Salidas consolidadas (URLs, FQDNs, IPs y credenciales)
 │   └── versions.tf                      # Configuración de OpenTofu y backend "azurerm"
@@ -30,11 +29,6 @@ infra/
 │   ├── backend.tfvars                   # Parámetros de DB Neon, JWT, CORS y repo backend
 │   ├── frontend.tfvars                  # Parámetros del repositorio frontend y API URL
 │   └── *.example.tfvars                 # Plantillas de ejemplo para versionado seguro
-├── scripts/                             # Automatización de pruebas, despliegue y destrucción
-│   ├── deploy.ps1                       # Despliegue en Windows (PowerShell) con auto-bootstrap
-│   ├── deploy.sh                        # Despliegue en Linux/macOS (Bash)
-│   ├── destroy.ps1                      # Eliminación segura en Windows (PowerShell)
-│   └── destroy.sh                       # Eliminación segura en Linux/macOS (Bash)
 ├── reportes/                            # Evidencias y auditoría DevSecOps
 │   ├── tofu-validate.md                 # Reporte de validación oficial de OpenTofu (0 Errores)
 │   ├── tflint.md                        # Reporte de linter con ruleset de AzureRM
@@ -69,24 +63,25 @@ Cada archivo dentro de `plantillas/` agrupa exclusivamente los recursos de un do
 ## 🚀 Métodos de Despliegue
 
 ### Método 1: Despliegue Automatizado con Script (Recomendado)
-El script [`scripts/deploy.ps1`](file:///d:/soe/modulos/DCID-V1E1%20-%2002%20I%20INFRAESTRUCTURA%20COMO%20C%C3%93DIGO%20%28IAC%29/apps/app4/IAC/azure/OpenTofu/hardware/infra/scripts/deploy.ps1) gestiona todo el ciclo de vida:
+El script centralizado `scripts/deploy.ps1` (ubicado en la raíz de `hardware/`) gestiona todo el ciclo de vida:
 - Verifica los archivos en `parametros/`.
 - Comprueba si el módulo `../../bootstrap` ya creó el Storage Account en Azure; si no existe, lo crea automáticamente.
 - Valida y formatea las plantillas.
 - Inicializa OpenTofu y aplica la infraestructura.
+- Exporta dinámicamente las IPs públicas al inventario de Ansible (`ansible/inventory/hosts.ini`).
 - Imprime la tabla de resumen con URLs y credenciales.
 
 ```powershell
-cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu\hardware\infra"
+cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu-Ansible\hardware"
 
-# Ejecutar despliegue completo
-powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
+# Ejecutar despliegue completo de infraestructura
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy.ps1 -Target infra
 ```
 
 > [!TIP]
 > **Modos opcionales:**
-> - Simulación sin crear recursos: `powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -DryRun`
-> - Omitir escaneos DevSecOps: `powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -SkipScan`
+> - Simulación sin crear recursos: `.\scripts\deploy.ps1 -Target infra -DryRun`
+> - Omitir escaneos DevSecOps: `.\scripts\deploy.ps1 -Target infra -SkipScan`
 
 ---
 
@@ -130,7 +125,8 @@ Una vez concluido el despliegue:
 Para eliminar todos los recursos y evitar consumo de créditos de Azure:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\destroy.ps1
+cd "d:\soe\modulos\DCID-V1E1 - 02 I INFRAESTRUCTURA COMO CÓDIGO (IAC)\apps\app4\IAC\azure\OpenTofu-Ansible\hardware"
+powershell -ExecutionPolicy Bypass -File .\scripts\destroy.ps1
 ```
 O manualmente:
 ```powershell

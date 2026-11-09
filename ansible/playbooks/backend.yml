@@ -1,0 +1,10 @@
+---
+- name: Aprovisionar servidor Backend (NestJS + TypeORM + Systemd)
+  hosts: backend
+  become: yes
+  gather_facts: yes
+  roles:
+    - role: common
+    - role: nodejs
+    - role: backend
+
