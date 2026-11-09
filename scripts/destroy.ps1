@@ -1,10 +1,10 @@
-<#
+﻿<#
 .SYNOPSIS
     Script de destrucción controlada (teardown) de infraestructura en Azure.
 
 .DESCRIPTION
     Elimina de forma segura y completa todos los recursos aprovisionados
-    en Microsoft Azure mediante OpenTofu.
+    en Microsoft Azure mediante OpenTofu (PostgreSQL, Backend NestJS, Frontend Vite).
 
 .EXAMPLE
     .\scripts\destroy.ps1
@@ -25,16 +25,16 @@ $TemplateDir  = Join-Path $InfraDir "plantillas"
 $ParamDir     = Join-Path $InfraDir "parametros"
 
 Write-Host "`n============================================================" -ForegroundColor Red
-Write-Host "  Destrucción Controlada de Infraestructura en Azure" -ForegroundColor Red
+Write-Host "  Destrucción Controlada de Infraestructura en Azure (3-Tier)" -ForegroundColor Red
 Write-Host "============================================================" -ForegroundColor Red
 
 # 1. Confirmación de seguridad
 if (-not $Force) {
     Write-Host "`n[PELIGRO] Esta acción eliminará permanentemente:" -ForegroundColor Red
-    Write-Host "  - Máquinas Virtuales Linux (Backend y Frontend)" -ForegroundColor Red
+    Write-Host "  - Máquinas Virtuales Linux (Base de Datos PostgreSQL, Backend NestJS, Frontend React)" -ForegroundColor Red
     Write-Host "  - IPs Públicas Estáticas y Tarjetas de Red (NICs)" -ForegroundColor Red
     Write-Host "  - Firewalls NSG y Asociaciones de Red" -ForegroundColor Red
-    Write-Host "  - Red Virtual (VNet) y Subredes" -ForegroundColor Red
+    Write-Host "  - Red Virtual (VNet) y Subredes (10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24)" -ForegroundColor Red
     Write-Host "  - Log Analytics Workspace y Alertas de Azure Monitor" -ForegroundColor Red
     Write-Host "  - Resource Group completo en Azure" -ForegroundColor Red
     
@@ -64,4 +64,3 @@ try {
 } finally {
     Pop-Location
 }
-

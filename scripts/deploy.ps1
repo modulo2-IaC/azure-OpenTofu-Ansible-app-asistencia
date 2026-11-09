@@ -11,6 +11,7 @@
     .\scripts\deploy.ps1 -Target infra      # Aprovisiona únicamente la infraestructura con OpenTofu
     .\scripts\deploy.ps1 -Target ansible    # Configura únicamente el software con Ansible
     .\scripts\deploy.ps1 -DryRun            # Simulación sin aplicar cambios en Azure
+    .\scripts\deploy.ps1 -SkipScan          # Despliegue rápido omitiendo análisis Checkov
 #>
 
 [CmdletBinding()]
@@ -82,7 +83,7 @@ if ($Target -in @("all", "infra")) {
 
         if (-not $SkipScan) {
             if (Get-Command checkov -ErrorAction SilentlyContinue) {
-                Write-Host "  -> Ejecutando análisis de seguridad con Checkov..." -ForegroundColor Cyan
+                Write-Host "  -> Ejecutando análisis de seguridad con Checkov (puede demorar unos segundos)..." -ForegroundColor Cyan
                 checkov -d . --framework terraform --quiet --compact 2>&1 | Out-Null
             }
         }
@@ -129,15 +130,12 @@ if ($Target -in @("all", "infra")) {
 
         # 5. Aplicación
         Write-Host "  -> Aplicando infraestructura en Azure..." -ForegroundColor Cyan
-        $applyArgs = @("apply")
-        if ($AutoApprove) { $applyArgs += "-auto-approve" }
-        $applyArgs += "tfplan"
-        & tofu $applyArgs
+        & tofu apply "tfplan"
         if ($LASTEXITCODE -ne 0) { throw "tofu apply falló con código $LASTEXITCODE" }
 
         Write-Host "`n[OK] Infraestructura Cloud desplegada exitosamente." -ForegroundColor Green
         
-        # Endpoints
+        # Endpoints y URLs
         $frontUrl = (tofu output -raw frontend_url 2>$null)
         $frontIp  = (tofu output -raw frontend_ip_url 2>$null)
         $backApi  = (tofu output -raw backend_api_url 2>$null)
@@ -157,16 +155,33 @@ if ($Target -in @("all", "ansible")) {
     Write-Host "`n>>> [FASE 2] Aprovisionando Software y Configuración con Ansible..." -ForegroundColor Magenta
     $AnsibleRunner = Join-Path $ScriptDir "run-ansible.ps1"
 
-    # 1. Ping previo de comprobación
+    # 1. Ping previo de comprobación con bucle de reintentos
     Write-Host "  -> Verificando conectividad SSH con las VMs en Azure..." -ForegroundColor Cyan
-    & $AnsibleRunner "ping"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Fallo la conectividad SSH con las máquinas virtuales de Azure."
-        exit $LASTEXITCODE
+    $maxAttempts = 12
+    $attempt = 1
+    $connected = $false
+
+    while ($attempt -le $maxAttempts -and -not $connected) {
+        Write-Host "     [Intento $attempt/$maxAttempts] Probando SSH hacia las VMs (esperando inicialización del SO)..." -ForegroundColor Yellow
+        $pingResult = & $AnsibleRunner "ping" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $connected = $true
+            Write-Host "     [OK] Todas las máquinas virtuales responden correctamente vía SSH." -ForegroundColor Green
+            break
+        }
+        $attempt++
+        if ($attempt -le $maxAttempts) {
+            Start-Sleep -Seconds 10
+        }
     }
 
-    # 2. Despliegue de playbooks
-    Write-Host "  -> Aplicando playbooks de Ansible (NestJS, Vite, Nginx, Systemd)..." -ForegroundColor Cyan
+    if (-not $connected) {
+        Write-Error "Fallo la conectividad SSH con las máquinas virtuales de Azure tras $maxAttempts intentos."
+        exit 1
+    }
+
+    # 2. Despliegue de playbooks (Database -> Backend -> Frontend)
+    Write-Host "  -> Aplicando playbooks de Ansible (PostgreSQL, NestJS, Vite, Nginx)..." -ForegroundColor Cyan
     & $AnsibleRunner "deploy"
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Fallo la ejecución de los playbooks de Ansible."
@@ -177,4 +192,3 @@ if ($Target -in @("all", "ansible")) {
     Write-Host "  ¡Despliegue Integral Completado con Éxito!" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Green
 }
-

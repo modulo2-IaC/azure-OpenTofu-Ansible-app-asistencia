@@ -11,6 +11,7 @@
     .\scripts\run-ansible.ps1 ping
     .\scripts\run-ansible.ps1 check
     .\scripts\run-ansible.ps1 deploy
+    .\scripts\run-ansible.ps1 database
     .\scripts\run-ansible.ps1 backend
     .\scripts\run-ansible.ps1 frontend
     .\scripts\run-ansible.ps1 bash
@@ -63,7 +64,7 @@ if (-not (Test-Path $InventoryFile) -and (Test-Path $InventoryExample)) {
     Copy-Item $InventoryExample $InventoryFile
 }
 
-# 3. Detectar ruta de llaves SSH del usuario en Windows
+# 4. Detectar ruta de llaves SSH del usuario en Windows
 $SshDir = "$HOME\.ssh"
 $SshVolume = ""
 if (Test-Path $SshDir) {
@@ -71,7 +72,7 @@ if (Test-Path $SshDir) {
     $SshVolume = "-v ${SshDir}:/root/.ssh_host:ro"
 }
 
-# 4. Determinar flags de TTY y comando base a ejecutar
+# 5. Determinar flags de TTY y comando base a ejecutar
 $ttyFlag = ""
 try {
     if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
@@ -131,4 +132,3 @@ Uso del script de pruebas de Ansible:
 "@ -ForegroundColor Gray
     }
 }
-
