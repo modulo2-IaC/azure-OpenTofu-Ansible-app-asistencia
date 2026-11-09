@@ -86,7 +86,7 @@ variable "admin_full_name" {
 variable "database_vm_size" {
   description = "Tamaño de la máquina virtual para el servidor de base de datos PostgreSQL"
   type        = string
-  default     = "Standard_B1s"
+  default     = "Standard_B2s_v2"
 }
 
 variable "db_name" {
